@@ -131,6 +131,9 @@ public sealed class HandPoseDetector : IDisposable
     /// <summary>
     /// 惰性加载两个模型。构造阶段不加载 —— 模型合计约 8 MB，
     /// 且加载失败只应让摄像头通道降级，不应导致应用启动失败。
+    ///
+    /// 模型以嵌入资源随程序集分发，运行时从资源流读到内存再交给推理会话，
+    /// 因此产物不需要额外的模型目录，单文件发布也能直接运行。
     /// </summary>
     private bool EnsureModels()
     {
@@ -138,9 +141,8 @@ public sealed class HandPoseDetector : IDisposable
 
         try
         {
-            string root = AppContext.BaseDirectory;
-            _palm ??= new InferenceSession(Path.Combine(root, "Assets", "palm_detection_mediapipe_2023feb.onnx"));
-            _hand ??= new InferenceSession(Path.Combine(root, "Assets", "handpose_estimation_mediapipe_2023feb.onnx"));
+            _palm ??= new InferenceSession(ReadModelResource("palm_detection_mediapipe_2023feb.onnx"));
+            _hand ??= new InferenceSession(ReadModelResource("handpose_estimation_mediapipe_2023feb.onnx"));
             return true;
         }
         catch (Exception ex)
@@ -148,6 +150,26 @@ public sealed class HandPoseDetector : IDisposable
             Report($"手势模型加载失败：{ex.Message}");
             return false;
         }
+    }
+
+    private static byte[] ReadModelResource(string fileName)
+    {
+        var assembly = typeof(HandPoseDetector).Assembly;
+
+        string? resource = assembly.GetManifestResourceNames()
+            .FirstOrDefault(n => n.EndsWith(fileName, StringComparison.OrdinalIgnoreCase));
+
+        if (resource is null)
+        {
+            throw new FileNotFoundException($"程序集中未找到模型资源 {fileName}");
+        }
+
+        using Stream? stream = assembly.GetManifestResourceStream(resource)
+            ?? throw new FileNotFoundException($"无法打开模型资源 {resource}");
+
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return buffer.ToArray();
     }
 
     // ---------------------------------------------------------------- 生命周期

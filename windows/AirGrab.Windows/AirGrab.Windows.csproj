@@ -30,16 +30,13 @@
     palm_detection 在整帧上定位手掌，handpose 在裁剪出的手掌区域上出 21 关键点。
     两者均为 MediaPipe 官方模型的 ONNX 转换版（Apache 2.0），
     关键点定义与 iOS 端 Vision 使用的同一套 21 点语义完全一致。
+
+    作为**嵌入资源**而非内容文件：单文件发布（PublishSingleFile）不会把
+    子目录内容打进 exe，只有嵌入资源才会随程序集合并 —— 这样 exe 才真正自包含。
   -->
   <ItemGroup>
-    <Content Include="Assets\palm_detection_mediapipe_2023feb.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>Assets\palm_detection_mediapipe_2023feb.onnx</TargetPath>
-    </Content>
-    <Content Include="Assets\handpose_estimation_mediapipe_2023feb.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>Assets\handpose_estimation_mediapipe_2023feb.onnx</TargetPath>
-    </Content>
+    <EmbeddedResource Include="Assets\palm_detection_mediapipe_2023feb.onnx" />
+    <EmbeddedResource Include="Assets\handpose_estimation_mediapipe_2023feb.onnx" />
   </ItemGroup>
 
 </Project>

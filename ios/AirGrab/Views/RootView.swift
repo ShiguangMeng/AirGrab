@@ -75,7 +75,19 @@ struct RootView: View {
                     Text("可抓取内容")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(AGTheme.ink)
+
                     Spacer()
+
+                    // 移动端的抓取源就是本机屏幕，不需要文件选择器或相册授权。
+                    Button {
+                        model.captureScreen()
+                    } label: {
+                        Label("抓取本机屏幕", systemImage: "camera.viewfinder")
+                            .font(.system(size: 11.5, weight: .medium))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
                     Text("\(model.outbox.count) 项")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(AGTheme.inkTertiary)

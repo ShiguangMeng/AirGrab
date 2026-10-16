@@ -67,6 +67,83 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
     /// <summary>投送目标：优先真实设备，没有则回落到本机回环。</summary>
     public Peer ResolveTarget() => Peers.Count > 0 ? Peers[0] : LoopbackPeer;
 
+    // ---------------------------------------------------------------- 手动设备
+
+    /// <summary>自动发现到的设备快照，来自 PeerDiscovery。</summary>
+    private IReadOnlyList<Peer> _discovered = Array.Empty<Peer>();
+
+    /// <summary>
+    /// 手动添加的设备。自动发现依赖 UDP 广播，跨网段、防火墙拦截、
+    /// 或对端（iOS 真机发送广播需 Apple 特批授权）发不出信标时都收不到，
+    /// 手动填写 IP 是绕过全部发现环节的兜底路径。
+    /// </summary>
+    private readonly Dictionary<string, Peer> _manualPeers = new(StringComparer.OrdinalIgnoreCase);
+
+    public int ManualPeerCount => _manualPeers.Count;
+
+    /// <summary>
+    /// 手动添加设备。接受 <c>192.168.1.20</c> 或 <c>192.168.1.20:25586</c> 两种写法。
+    /// </summary>
+    public bool AddManualPeer(string hostOrIp)
+    {
+        string input = (hostOrIp ?? string.Empty).Trim();
+        if (input.Length == 0)
+        {
+            StatusLine = "请输入对方设备的 IP 地址";
+            Raise(nameof(StatusLine));
+            return false;
+        }
+
+        string host = input;
+        int port = FileTransfer.TcpPort;
+        int colon = input.LastIndexOf(':');
+        if (colon > 0 && int.TryParse(input[(colon + 1)..], out int parsedPort))
+        {
+            host = input[..colon];
+            port = parsedPort;
+        }
+
+        if (!System.Net.IPAddress.TryParse(host, out System.Net.IPAddress? address))
+        {
+            StatusLine = "IP 地址格式不正确，示例：192.168.1.20";
+            Raise(nameof(StatusLine));
+            return false;
+        }
+
+        string id = $"manual:{address}";
+        _manualPeers[id] = new Peer(
+            id,
+            $"手动 · {address}",
+            "手动",
+            address,
+            DateTimeOffset.UtcNow);
+
+        MergePeers();
+        StatusLine = $"已手动添加设备 {address}:{port}";
+        Raise(nameof(StatusLine));
+        return true;
+    }
+
+    public void ClearManualPeers()
+    {
+        if (_manualPeers.Count == 0) return;
+        _manualPeers.Clear();
+        MergePeers();
+        StatusLine = "已清除手动添加的设备";
+        Raise(nameof(StatusLine));
+    }
+
+    /// <summary>手动设备在前、自动发现设备在后，合并进界面绑定的集合。</summary>
+    private void MergePeers()
+    {
+        Peers.Clear();
+        foreach (Peer peer in _manualPeers.Values) Peers.Add(peer);
+        foreach (Peer peer in _discovered) Peers.Add(peer);
+
+        Raise(nameof(PeerCount));
+        Raise(nameof(ManualPeerCount));
+    }
+
     // ---------------------------------------------------------------- 启动
 
     public void Start()
@@ -81,9 +158,8 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
     {
         Discovery.PeersChanged += snapshot => _dispatcher.TryEnqueue(() =>
         {
-            Peers.Clear();
-            foreach (Peer peer in snapshot) Peers.Add(peer);
-            Raise(nameof(PeerCount));
+            _discovered = snapshot;
+            MergePeers();
         });
 
         Gesture.StateChanged += _ => _dispatcher.TryEnqueue(() => RaiseState());
@@ -229,12 +305,52 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    /// <summary>从剪贴板抓取内容，生成一条真实可投送的载荷。</summary>
+    /// <summary>
+    /// 从剪贴板抓取内容。抓取优先级：图片 → 文件 → 文本 → 链接。
+    /// 图片与文件优先于文本，因为剪贴板里同时存在多种格式时，
+    /// 富内容通常是用户真正的抓取意图（例如复制的截图往往还带着来源页面的文本）。
+    /// </summary>
     public async Task<bool> CaptureFromClipboardAsync()
     {
         try
         {
             var view = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+
+            if (view.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Bitmap))
+            {
+                var reference = await view.GetBitmapAsync();
+                using var stream = await reference.OpenReadAsync();
+                using var ms = new MemoryStream();
+                using (var netStream = stream.AsStreamForRead())
+                {
+                    await netStream.CopyToAsync(ms).ConfigureAwait(true);
+                }
+
+                byte[] imageBytes = ms.ToArray();
+                if (imageBytes.Length > 0)
+                {
+                    Payload image = Payload.FromImage(ClipboardImageName(), imageBytes);
+                    Outbox.Insert(0, image);
+                    StatusLine = $"已从剪贴板抓取图片：{image.Name}（{image.SizeText}）";
+                    Raise(nameof(StatusLine));
+                    return true;
+                }
+            }
+
+            if (view.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+            {
+                var items = await view.GetStorageItemsAsync();
+                var file = items.OfType<Windows.Storage.StorageFile>().FirstOrDefault();
+                if (file is not null)
+                {
+                    byte[] bytes = File.ReadAllBytes(file.Path);
+                    Payload payload = Payload.FromFile(file.Name, bytes);
+                    Outbox.Insert(0, payload);
+                    StatusLine = $"已从剪贴板抓取文件：{payload.Name}（{payload.SizeText}）";
+                    Raise(nameof(StatusLine));
+                    return true;
+                }
+            }
 
             if (view.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text))
             {
@@ -256,7 +372,7 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
                 }
             }
 
-            StatusLine = "剪贴板中没有可抓取的文本";
+            StatusLine = "剪贴板中没有可抓取的内容（支持图片、文件、文本、链接）";
             Raise(nameof(StatusLine));
             return false;
         }
@@ -267,6 +383,9 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
             return false;
         }
     }
+
+    private static string ClipboardImageName()
+        => $"剪贴板图片-{DateTime.Now:HHmmss}.png";
 
     public Payload? FirstOutboxItem => Outbox.Count > 0 ? Outbox[0] : null;
 

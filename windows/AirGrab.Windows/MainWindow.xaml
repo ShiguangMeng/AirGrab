@@ -222,6 +222,20 @@
 
                         <TextBlock Text="局域网设备" FontSize="13" FontWeight="SemiBold" />
 
+                        <Border x:Name="DevicesEmpty"
+                                CornerRadius="9" Padding="16,22"
+                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1">
+                            <StackPanel Spacing="5" HorizontalAlignment="Center">
+                                <TextBlock Text="暂未发现局域网设备" FontSize="13" FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock Text="正在监听 UDP 广播信标（:25585）。若对方就在身边仍不出现，请检查 Windows 防火墙是否放行本程序，或直接用下方的「手动添加设备」填写对方 IP。"
+                                           FontSize="11.5" Opacity="0.65" TextWrapping="Wrap"
+                                           MaxWidth="540" TextAlignment="Center" HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+
                         <ItemsControl ItemsSource="{x:Bind Model.Peers}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -253,8 +267,28 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
+                        <Border
+                            CornerRadius="9" Padding="14,13"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="手动添加设备" FontSize="12.5" FontWeight="SemiBold" />
+                                <TextBlock
+                                    Text="自动发现依赖 UDP 广播。跨网段、防火墙拦截，或对方是 iOS 真机（发送广播需 Apple 特批的网络授权）时信标到不了本机 —— 直接填对方 IP 可绕过整个发现环节。"
+                                    FontSize="11.5" Opacity="0.7" TextWrapping="Wrap" />
+                                <StackPanel Orientation="Horizontal" Spacing="9">
+                                    <TextBox x:Name="ManualHostBox" Width="216"
+                                             PlaceholderText="192.168.1.20" />
+                                    <Button Content="添加" Click="OnAddManualPeerClicked" />
+                                    <Button Content="清除全部" Click="OnClearManualPeersClicked" />
+                                </StackPanel>
+                                <TextBlock x:Name="ManualHint" FontSize="11.5" Opacity="0.65" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
                         <TextBlock
-                            Text="尚未发现局域网设备时，投送会自动回落到本机回环。发现依靠 UDP 广播，跨网段或防火墙拦截会导致收不到信标。"
+                            Text="没有任何设备时，投送会自动回落到本机回环 —— 内容仍会走完整的落地流程：文本进剪贴板、图片落图片库、文件落下载目录。"
                             FontSize="11.5" Opacity="0.6" TextWrapping="Wrap" />
 
                         <Border

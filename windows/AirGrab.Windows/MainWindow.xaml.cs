@@ -115,14 +115,39 @@ public sealed partial class MainWindow : Window
             ? $"{Model.PeerCount} 台设备在附近 · 松手投送至最近设备"
             : "附近暂无设备 · 松手投送至本机回环，内容会真实落地";
 
-        DevicesSubtitle.Text = $"{Model.PeerCount} 台局域网设备 · UDP :25585 广播发现";
+        DevicesSubtitle.Text = Model.ManualPeerCount > 0
+            ? $"{Model.PeerCount} 台设备（{Model.ManualPeerCount} 台手动） · UDP :25585 广播发现"
+            : $"{Model.PeerCount} 台局域网设备 · UDP :25585 广播发现";
+
         HistorySubtitle.Text = $"已接收 {Model.Inbox.Count} 项 · 已投送 {Model.Outbox.Count} 项";
         SettingsSubtitle.Text = $"接收服务 :{FileTransfer.TcpPort} · 发现端口 :25585";
+
+        // 没有设备时才显示空状态占位，避免列表为空时页面看起来像坏掉了。
+        DevicesEmpty.Visibility = Model.PeerCount == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        ManualHint.Text = Model.ManualPeerCount > 0
+            ? $"已手动添加 {Model.ManualPeerCount} 台设备，投送时优先使用。"
+            : "手动添加的设备不受广播与超时淘汰影响，长期保留。";
 
         ServiceLine.Text =
             $"接收服务：{(Model.IsServing ? "已监听 :25586" : "未启动")}\n" +
             $"状态：{Model.StatusLine}\n" +
             $"日志：{Model.TransferLog}";
+    }
+
+    private void OnAddManualPeerClicked(object sender, RoutedEventArgs e)
+    {
+        if (Model.AddManualPeer(ManualHostBox.Text))
+        {
+            ManualHostBox.Text = string.Empty;
+        }
+        SyncUi();
+    }
+
+    private void OnClearManualPeersClicked(object sender, RoutedEventArgs e)
+    {
+        Model.ClearManualPeers();
+        SyncUi();
     }
 
     // ---------------------------------------------------------------- 操作

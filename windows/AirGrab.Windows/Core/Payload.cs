@@ -95,6 +95,23 @@ public sealed class Payload
         ByteCount = Encoding.UTF8.GetByteCount(url),
         Body = Encoding.UTF8.GetBytes(url)
     };
+
+    /// <summary>图片载荷。字节为图片文件本体（PNG 或原始剪贴板位图流）。</summary>
+    public static Payload FromImage(string name, byte[] imageBytes) => new()
+    {
+        Kind = PayloadKind.Image,
+        Name = name,
+        ByteCount = imageBytes.Length,
+        Body = imageBytes
+    };
+
+    public static Payload FromFile(string name, byte[] fileBytes) => new()
+    {
+        Kind = PayloadKind.File,
+        Name = name,
+        ByteCount = fileBytes.Length,
+        Body = fileBytes
+    };
 }
 
 public sealed class AggFormatException : Exception

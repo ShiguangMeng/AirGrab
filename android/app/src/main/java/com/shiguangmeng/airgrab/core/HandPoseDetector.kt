@@ -36,6 +36,10 @@ class HandPoseDetector(private val context: Context) {
     fun start() {
         if (landmarker != null) return
 
+        // 前台服务保活：Android 10+ 进程降到后台优先级后摄像头采集会被切断，
+        // 声明 camera 类型的前台服务把进程维持在前台优先级。
+        CameraForegroundService.start(context.applicationContext)
+
         runCatching {
             val baseOptions = BaseOptions.builder()
                 .setModelAssetPath(MODEL_ASSET)
@@ -46,14 +50,16 @@ class HandPoseDetector(private val context: Context) {
                 .setBaseOptions(baseOptions)
                 .setRunningMode(RunningMode.LIVE_STREAM)
                 .setNumHands(2)
-                .setMinHandDetectionConfidence(0.5f)
-                .setMinTrackingConfidence(0.5f)
+                // 检测门槛取 0.65：低于此值的结果多为把脸部 / 手臂轮廓误判为手，
+                // 误判会直接推进手势状态机，代价远高于偶尔漏检。
+                .setMinHandDetectionConfidence(0.65f)
+                .setMinTrackingConfidence(0.6f)
                 .setResultListener { result, _ -> _pose.value = analyze(result) }
                 .setErrorListener { error -> _status.value = "推理错误：${error.message}" }
                 .build()
 
             landmarker = HandLandmarker.createFromOptions(context, options)
-            _status.value = "手部 21 关键点 · 端侧推理"
+            _status.value = "手部 21 关键点 · 端侧推理 · 前台服务保活"
         }.onFailure {
             _status.value = "模型不可用，已回退模拟输入（${it.message}）"
         }
@@ -62,6 +68,7 @@ class HandPoseDetector(private val context: Context) {
     fun stop() {
         runCatching { landmarker?.close() }
         landmarker = null
+        CameraForegroundService.stop(context.applicationContext)
         _status.value = "已停止"
     }
 
@@ -80,6 +87,23 @@ class HandPoseDetector(private val context: Context) {
         private const val MIDDLE_MCP = 9
         private val TIP_INDICES = intArrayOf(8, 12, 16, 20)
 
+        /** 整手置信度下限。低于此值的观测多为把脸部 / 手臂轮廓误判为手。 */
+        private const val MIN_HAND_SCORE = 0.6f
+
+        /** 掌长占画面短边的合理区间；越界视为误检。 */
+        private const val MIN_PALM_LENGTH = 0.04
+        private const val MAX_PALM_LENGTH = 0.70
+
+        /** 归一化张开度区间：掌根到指尖的平均距离 / 掌长。 */
+        private const val OPENNESS_FIST = 1.05
+        private const val OPENNESS_SPREAD = 1.65
+
+        /**
+         * 由 MediaPipe 的 21 关键点折算 openness / 掌心位置。
+         *
+         * 参考点取**掌根**而非掌心：指尖到掌根的距离在张开与握拳之间差异最大，
+         * 用掌心中点做参考会压缩这个差异，导致张开手掌难以越过张开阈值。
+         */
         fun analyze(result: HandLandmarkerResult): HandPose {
             val hands = result.landmarks()
             if (hands.isEmpty()) return HandPose.NONE
@@ -87,34 +111,41 @@ class HandPoseDetector(private val context: Context) {
             val primary = hands.first()
             if (primary.size < 21) return HandPose.NONE
 
+            // 分类分数即整手置信度；误检结果通常明显低于门槛。
+            val score = result.handednesses()
+                .getOrNull(0)
+                ?.firstOrNull()
+                ?.score()
+                ?: 0f
+            if (score < MIN_HAND_SCORE) return HandPose.NONE
+
             val wrist = primary[WRIST]
             val middleMcp = primary[MIDDLE_MCP]
 
-            val palmScale = maxOf(
-                hypot((middleMcp.x() - wrist.x()).toDouble(), (middleMcp.y() - wrist.y()).toDouble()),
-                0.001
+            val palmLength = hypot(
+                (middleMcp.x() - wrist.x()).toDouble(),
+                (middleMcp.y() - wrist.y()).toDouble()
             )
+            if (palmLength < MIN_PALM_LENGTH || palmLength > MAX_PALM_LENGTH) return HandPose.NONE
+
+            var sum = 0.0
+            for (index in TIP_INDICES) {
+                val tip = primary[index]
+                sum += hypot((tip.x() - wrist.x()).toDouble(), (tip.y() - wrist.y()).toDouble()) / palmLength
+            }
+            val ratio = sum / TIP_INDICES.size
+            val openness = ((ratio - OPENNESS_FIST) / (OPENNESS_SPREAD - OPENNESS_FIST))
+                .coerceIn(0.0, 1.0)
+                .toFloat()
 
             val palmX = (wrist.x() + middleMcp.x()) / 2f
             val palmY = (wrist.y() + middleMcp.y()) / 2f
-
-            var sum = 0.0
-            var count = 0
-            for (index in TIP_INDICES) {
-                val tip = primary[index]
-                sum += hypot((tip.x() - palmX).toDouble(), (tip.y() - palmY).toDouble()) / palmScale
-                count++
-            }
-            if (count == 0) return HandPose.NONE
-
-            val average = sum / count
-            val openness = ((average - 0.45) / (1.35 - 0.45)).coerceIn(0.0, 1.0).toFloat()
 
             return HandPose(
                 openness = openness,
                 x = palmX.coerceIn(0f, 1f),
                 y = palmY.coerceIn(0f, 1f),
-                confidence = 0.9f,
+                confidence = score,
                 handCount = hands.size
             )
         }

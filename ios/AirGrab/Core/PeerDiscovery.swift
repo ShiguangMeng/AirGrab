@@ -32,7 +32,9 @@ final class PeerDiscovery: ObservableObject {
     @Published private(set) var peers: [Peer] = []
 
     var beaconInterval: TimeInterval = 2.0
-    var ttl: TimeInterval = 8.0
+    /// 淘汰阈值。取 14 秒而非 8 秒：进入后台时定时器会被系统挂起数秒，
+    /// 过短的窗口会把对方误判为离线，表现为设备列表频繁清空。
+    var ttl: TimeInterval = 14.0
     var displayName: String = "iPhone 17 Pro"
     var platform: String = "iOS"
 

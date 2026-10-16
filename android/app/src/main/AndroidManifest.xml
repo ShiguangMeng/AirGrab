@@ -23,6 +23,17 @@
         android:name="android.hardware.camera.any"
         android:required="false" />
 
+    <!--
+      后台长时间采集：Android 10+ 的进程一旦降到后台优先级，摄像头采集会被系统切断。
+      声明 foregroundServiceType="camera" 的前台服务把进程维持在前台优先级，
+      采集才能持续；前台服务本身需要通知，因此一并申请通知权限。
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission
+        android:name="android.permission.POST_NOTIFICATIONS"
+        tools:targetApi="33" />
+
     <!-- 接收图片落相册 -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
@@ -44,6 +55,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".core.CameraForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
     </application>
 
 </manifest>

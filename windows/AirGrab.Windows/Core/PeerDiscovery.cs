@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 
@@ -40,8 +41,13 @@ public sealed record Peer(
 /// 设备发现：UDP 广播信标 + 超时淘汰。
 ///
 /// 信标为单行文本 <c>AGG-DISCOVER|&lt;id&gt;|&lt;name&gt;|&lt;platform&gt;|&lt;tcpPort&gt;</c>，
-/// 每 <see cref="BeaconInterval"/> 向受限广播地址发一次；
-/// 超过 <see cref="Ttl"/> 未再收到即视为离线。不依赖任何账号体系，局域网内平权发现。
+/// 每 <see cref="BeaconInterval"/> 向**每一块活动网卡的子网定向广播地址**各发一次；
+/// 超过 <see cref="Ttl"/> 未再收到即视为离线。
+///
+/// 只发受限广播（255.255.255.255）在本机有多块网卡时不可靠 ——
+/// 系统会按默认路由挑一块网卡送出，其余网段（Wi-Fi 与有线分处不同子网、
+/// 存在 Hyper-V / VMware 虚拟网卡）永远收不到信标。因此这里枚举所有
+/// 状态为 Up 的 IPv4 接口，用「地址 | ~掩码」算出各自的广播地址逐个发送。
 /// </summary>
 public sealed class PeerDiscovery : IDisposable
 {
@@ -51,7 +57,7 @@ public sealed class PeerDiscovery : IDisposable
     public string DisplayName { get; set; } = Environment.MachineName;
     public string Platform { get; set; } = "Windows";
     public TimeSpan BeaconInterval { get; set; } = TimeSpan.FromSeconds(2);
-    public TimeSpan Ttl { get; set; } = TimeSpan.FromSeconds(8);
+    public TimeSpan Ttl { get; set; } = TimeSpan.FromSeconds(10);
 
     public event Action<IReadOnlyList<Peer>>? PeersChanged;
 
@@ -61,6 +67,10 @@ public sealed class PeerDiscovery : IDisposable
     private readonly UdpClient _listener;
     private readonly UdpClient _sender;
     private readonly List<Task> _workers = new();
+
+    /// <summary>UI 刷新节流：信号强度会随时间衰减，但不必每收到一次信标就重建列表。</summary>
+    private DateTimeOffset _lastRaise = DateTimeOffset.MinValue;
+    private static readonly TimeSpan RaiseThrottle = TimeSpan.FromSeconds(3);
 
     public PeerDiscovery()
     {
@@ -103,14 +113,73 @@ public sealed class PeerDiscovery : IDisposable
         string id = fields[1];
         if (string.Equals(id, _selfId, StringComparison.OrdinalIgnoreCase)) return; // 自己的广播丢弃
 
-        _peers[id] = new Peer(id, fields[2], fields[3], address, DateTimeOffset.UtcNow);
-        RaiseChanged();
+        var peer = new Peer(id, fields[2], fields[3], address, DateTimeOffset.UtcNow);
+
+        // 只有设备身份或地址变化才强制刷新；其余情况走节流，
+        // 避免每 2 秒重建一次列表导致卡片闪烁。
+        bool identityChanged = !_peers.TryGetValue(id, out Peer? existing)
+                            || !string.Equals(existing.Name, peer.Name, StringComparison.Ordinal)
+                            || !string.Equals(existing.Platform, peer.Platform, StringComparison.Ordinal)
+                            || !existing.Address.Equals(peer.Address);
+
+        _peers[id] = peer;
+        RaiseChanged(identityChanged);
+    }
+
+    /// <summary>
+    /// 枚举所有活动 IPv4 接口的广播地址。
+    /// 受限广播地址（255.255.255.255）一并保留，作为单网卡环境的兜底。
+    /// </summary>
+    private static List<IPEndPoint> BuildBroadcastTargets()
+    {
+        var targets = new List<IPEndPoint> { new(IPAddress.Broadcast, UdpPort) };
+
+        foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (nic.OperationalStatus != OperationalStatus.Up) continue;
+            if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
+
+            IPInterfaceProperties properties;
+            try
+            {
+                properties = nic.GetIPProperties();
+            }
+            catch (NetworkInformationException)
+            {
+                continue;
+            }
+
+            foreach (UnicastIPAddressInformation unicast in properties.UnicastAddresses)
+            {
+                if (unicast.Address.AddressFamily != AddressFamily.InterNetwork) continue;
+                if (unicast.IPv4Mask is null) continue;
+
+                byte[] ip = unicast.Address.GetAddressBytes();
+                byte[] mask = unicast.IPv4Mask.GetAddressBytes();
+                if (ip.Length != 4 || mask.Length != 4) continue;
+
+                byte[] broadcast = new byte[4];
+                for (int i = 0; i < 4; i++)
+                {
+                    broadcast[i] = (byte)(ip[i] | (mask[i] ^ 0xFF));
+                }
+
+                var candidate = new IPAddress(broadcast);
+                if (!targets.Exists(t => t.Address.Equals(candidate)))
+                {
+                    targets.Add(new IPEndPoint(candidate, UdpPort));
+                }
+            }
+        }
+
+        return targets;
     }
 
     private async Task BeaconLoopAsync(CancellationToken token)
     {
-        var endpoint = new IPEndPoint(IPAddress.Broadcast, UdpPort);
         using var timer = new PeriodicTimer(BeaconInterval);
+        string line = string.Empty;
+        List<IPEndPoint> targets = new();
 
         while (!token.IsCancellationRequested)
         {
@@ -120,16 +189,22 @@ public sealed class PeerDiscovery : IDisposable
             }
             catch (OperationCanceledException) { return; }
 
-            string line = string.Concat(
-                BeaconPrefix, "|", _selfId, "|", DisplayName, "|", Platform, "|", FileTransfer.TcpPort, "\n");
+            // 网卡可能随时增减（插拔网线、切换 Wi-Fi、虚拟网卡启停），每轮重算目标。
+            targets = BuildBroadcastTargets();
 
-            try
+            line = string.Concat(
+                BeaconPrefix, "|", _selfId, "|", DisplayName, "|", Platform, "|", FileTransfer.TcpPort, "\n");
+            byte[] bytes = Encoding.UTF8.GetBytes(line);
+
+            foreach (IPEndPoint endpoint in targets)
             {
-                byte[] bytes = Encoding.UTF8.GetBytes(line);
-                await _sender.SendAsync(bytes, endpoint, token).ConfigureAwait(false);
+                try
+                {
+                    await _sender.SendAsync(bytes, endpoint, token).ConfigureAwait(false);
+                }
+                catch (SocketException) { /* 个别网段不可达，其余网段照常发 */ }
+                catch (OperationCanceledException) { return; }
             }
-            catch (SocketException) { /* 广播在部分网卡上会短暂失败，下一轮重试即可 */ }
-            catch (OperationCanceledException) { return; }
         }
     }
 
@@ -156,18 +231,17 @@ public sealed class PeerDiscovery : IDisposable
                 }
             }
 
-            if (removed) RaiseChanged();
+            if (removed) RaiseChanged(force: true);
         }
     }
 
-    private void RaiseChanged()
+    private void RaiseChanged(bool force)
     {
-        var snapshot = _peers.Values
-            .OrderByDescending(p => p.SignalBars)
-            .ThenBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)
-            .ToArray();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (!force && now - _lastRaise < RaiseThrottle) return;
+        _lastRaise = now;
 
-        PeersChanged?.Invoke(snapshot);
+        PeersChanged?.Invoke(Snapshot());
     }
 
     public IReadOnlyList<Peer> Snapshot() => _peers.Values

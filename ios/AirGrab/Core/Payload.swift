@@ -58,6 +58,11 @@ extension Payload {
     static func link(_ url: URL) -> Payload {
         Payload(kind: .link, name: url.host ?? url.absoluteString, body: Data(url.absoluteString.utf8))
     }
+
+    /// 屏幕截图载荷。移动端的抓取源就是本机屏幕。
+    static func image(name: String, data: Data) -> Payload {
+        Payload(kind: .image, name: name, body: data)
+    }
 }
 
 enum AGGCodecError: Error {

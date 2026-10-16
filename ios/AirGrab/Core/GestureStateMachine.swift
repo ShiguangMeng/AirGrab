@@ -60,14 +60,27 @@ struct HandPose: Equatable {
 
 /// 手势状态机：把连续的手部姿态流收敛成离散的抓取 / 投送事件。
 ///
-/// 两个防误触闸门：
-/// 1. 握拳必须持续 `holdDuration` 才被确认为有意识的抓取；
-/// 2. 画面中同时出现两只手时整帧作废，宁可要求重试也不猜。
+/// 四道防误触闸门，缺一不可：
+/// 1. 握拳必须**连续**持续 `holdDuration` 才被确认为有意识的抓取；
+/// 2. 画面中同时出现两只手时整帧作废，宁可要求重试也不猜；
+/// 3. 张开手掌必须连续保持 `openPalmHoldDuration` 才被记为「见过张开」，
+///    单帧噪声不会打开抓取的前置条件；
+/// 4. 「见过张开」只在 `openPalmValidity` 时间窗内有效 —— 张开的动作必须
+///    紧邻随后的握拳，隔了很久的旧状态不能为凭空握拳背书。
+///
+/// 第 3、4 条是误触发的直接原因：检测器偶发噪声若把某一帧判为张开，
+/// 没有时效约束时它会永久为后续任何握拳放行，表现为「手没动也抓取了内容」。
 final class GestureStateMachine: ObservableObject {
     @Published private(set) var state: GestureState = .idle
     @Published private(set) var payloadName: String = "—"
 
     var holdDuration: TimeInterval = 0.5
+    /// 张开手掌需连续保持的时长，用于确认「见过张开」这一前置条件。
+    var openPalmHoldDuration: TimeInterval = 0.18
+    /// 「见过张开」的有效期；超出则前置条件失效。
+    var openPalmValidity: TimeInterval = 2.5
+    /// 搬运阶段张开手掌需连续保持的时长，用于确认投送意图。
+    var dropHoldDuration: TimeInterval = 0.12
     var multiHandPolicy: MultiHandPolicy = .reject
 
     enum MultiHandPolicy {
@@ -83,7 +96,12 @@ final class GestureStateMachine: ObservableObject {
     var onCancelled: (() -> Void)?
 
     private var fistSince: Date?
+    /// 当前这段连续张开的起点。
+    private var openSince: Date?
+    /// 最近一次被确认的张开时刻，受 `openPalmValidity` 约束。
     private var lastOpenSince: Date?
+    /// 搬运阶段连续张开的起点。
+    private var dropSince: Date?
     private var isCarrying = false
     private var hasGrabbed = false
     private var lastCenter: CGPoint = .init(x: 0.5, y: 0.5)
@@ -102,11 +120,20 @@ final class GestureStateMachine: ObservableObject {
         lastCenter = pose.center
 
         if isCarrying {
-            // 搬运阶段：保持拳，掌心位置持续输出；张开即投送。
+            // 搬运阶段：保持拳，掌心位置持续输出；张开并保持即投送。
             if pose.isOpenPalm {
-                state = .drop
-                isCarrying = false
-                onDropConfirmed?(pose.center)
+                if let since = dropSince {
+                    if now.timeIntervalSince(since) >= dropHoldDuration {
+                        state = .drop
+                        isCarrying = false
+                        dropSince = nil
+                        onDropConfirmed?(pose.center)
+                    }
+                } else {
+                    dropSince = now
+                }
+            } else {
+                dropSince = nil
             }
             return
         }
@@ -124,13 +151,13 @@ final class GestureStateMachine: ObservableObject {
 
         if pose.isFist {
             if let since = fistSince {
-                if now.timeIntervalSince(since) >= holdDuration {
-                    // 抓取成立的前提是此前出现过张开手掌，防止「凭空握拳」触发。
-                    if lastOpenSince != nil {
-                        hasGrabbed = true
-                        state = .grabbing
-                        onGrabConfirmed?(pose.center)
-                    }
+                if now.timeIntervalSince(since) >= holdDuration,
+                   let opened = lastOpenSince,
+                   now.timeIntervalSince(opened) <= openPalmValidity {
+                    // 抓取成立的前提是「近期」出现过张开手掌，防止凭空握拳触发。
+                    hasGrabbed = true
+                    state = .grabbing
+                    onGrabConfirmed?(pose.center)
                 }
             } else {
                 fistSince = now
@@ -142,12 +169,20 @@ final class GestureStateMachine: ObservableObject {
         fistSince = nil
 
         if pose.isOpenPalm {
-            lastOpenSince = now
-            if state == .idle || state == .hover {
+            // 张开需连续保持 openPalmHoldDuration 才确认，单帧噪声不打开抓取前置条件。
+            let start = openSince ?? now
+            openSince = start
+            if now.timeIntervalSince(start) >= openPalmHoldDuration {
+                lastOpenSince = now
+                if state == .idle || state == .hover {
+                    state = .hover
+                }
+            }
+        } else {
+            openSince = nil
+            if state == .grabbing {
                 state = .hover
             }
-        } else if state == .grabbing {
-            state = .hover
         }
     }
 
@@ -171,6 +206,8 @@ final class GestureStateMachine: ObservableObject {
         hasGrabbed = false
         isCarrying = false
         fistSince = nil
+        openSince = nil
+        dropSince = nil
         if state != .idle { state = .idle }
         if wasActive { onCancelled?() }
     }
@@ -180,7 +217,9 @@ final class GestureStateMachine: ObservableObject {
         hasGrabbed = false
         isCarrying = false
         fistSince = nil
+        openSince = nil
         lastOpenSince = nil
+        dropSince = nil
         state = .idle
         payloadName = "—"
     }
@@ -189,5 +228,7 @@ final class GestureStateMachine: ObservableObject {
         guard !isCarrying && !hasGrabbed else { return }
         if state != .idle { state = .idle }
         fistSince = nil
+        openSince = nil
+        dropSince = nil
     }
 }

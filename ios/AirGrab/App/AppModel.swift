@@ -70,6 +70,29 @@ final class AppModel: ObservableObject {
                   detail: value == .camera ? "手部 21 关键点 · Vision 端侧推理" : "用于无摄像头环境演示")
     }
 
+    // MARK: - 抓取本机屏幕
+
+    /// 抓取本机当前屏幕内容，加入待投送列表。
+    /// 移动端的抓取源就是屏幕本身 —— 与 Windows 端的剪贴板抓取相对应，
+    /// 两端都不需要文件选择器或额外授权。
+    func captureScreen() {
+        guard let image = ScreenCapture.snapshot(), let data = image.pngData() else {
+            showToast("截屏失败", detail: "请确认应用在前台且窗口可见")
+            return
+        }
+
+        let payload = Payload.image(name: "屏幕截图-\(Self.timestampText()).png", data: data)
+        outbox.insert(payload, at: 0)
+        statusLine = "已抓取本机屏幕：\(payload.name)"
+        showToast("已抓取本机屏幕", detail: "\(payload.sizeText) · 已加入待投送")
+    }
+
+    private static func timestampText() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HHmmss"
+        return formatter.string(from: Date())
+    }
+
     // MARK: - 发送
 
     func send(_ payload: Payload, to peer: Peer) {

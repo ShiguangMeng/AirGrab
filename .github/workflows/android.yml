@@ -47,11 +47,12 @@ jobs:
       - name: 编译 Debug APK
         working-directory: android
         run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace > build.log 2>&1
+          ./gradlew assembleDebug --no-daemon --stacktrace \
+            -Pkotlin.compiler.execution.strategy=in-process > build.log 2>&1
           code=$?
           if [ "$code" -ne 0 ]; then
             echo "=== 构建失败，错误摘要 ==="
-            grep -E "^e: |error:|FAILURE|What went wrong|Could not resolve|Could not find" build.log | head -40 || true
+            grep -E "^e: |Unresolved reference|error:|FAILURE" build.log | head -40 || true
           fi
           exit $code
 
@@ -59,7 +60,7 @@ jobs:
         if: failure()
         run: |
           mkdir -p ci-logs
-          { grep -E "^e: |^w: .*error|error:|FAILURE" android/build.log | head -60 || true; } > ci-logs/android-errors.txt
+          { grep -E "^e: |Unresolved reference|error:|FAILURE|Compilation error" android/build.log | head -80 || true; } > ci-logs/android-errors.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add ci-logs

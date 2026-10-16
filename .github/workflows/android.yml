@@ -59,7 +59,7 @@ jobs:
         if: failure()
         run: |
           mkdir -p ci-logs
-          sed -n '/FAILURE:/,$p' android/build.log | head -80 > ci-logs/android-errors.txt || true
+          { grep -E "^e: |^w: .*error|error:|FAILURE" android/build.log | head -60 || true; } > ci-logs/android-errors.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add ci-logs

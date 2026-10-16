@@ -165,7 +165,7 @@ fun GesturePanel(state: GestureState, carried: String, hint: String) {
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Filled.Handyman,
+                        Icons.Filled.PanTool,
                         contentDescription = state.title,
                         tint = if (state == GestureState.IDLE || state == GestureState.HOVER) {
                             MaterialTheme.colorScheme.onSurfaceVariant

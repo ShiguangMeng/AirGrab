@@ -150,9 +150,10 @@ final class AppModel: ObservableObject {
     // MARK: - 模拟通道（指针事件）
 
     /// 模拟通道把一个拖拽会话映射成与摄像头完全相同的状态机输入。
+    /// 载荷名由 `beginCarrying` 写入状态机，界面从状态机读回。
     func simulateGrab(_ payload: Payload) {
         guard channel == .simulated else { return }
-        machine.payloadName = payload.name
+
         machine.beginCarrying(name: payload.name)
         statusLine = "搬运 \(payload.name)，移向目标设备"
     }

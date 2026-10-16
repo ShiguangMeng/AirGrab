@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
@@ -43,7 +46,25 @@ jobs:
 
       - name: 编译 Debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace > build.log 2>&1
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "=== 构建失败，错误摘要 ==="
+            grep -E "^e: |error:|FAILURE|What went wrong|Could not resolve|Could not find" build.log | head -40 || true
+          fi
+          exit $code
+
+      - name: 回写编译日志（仅在失败时）
+        if: failure()
+        run: |
+          mkdir -p ci-logs
+          sed -n '/FAILURE:/,$p' android/build.log | head -80 > ci-logs/android-errors.txt || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ci-logs
+          git commit -m "ci: 记录 Android 编译错误 [skip ci]" || exit 0
+          git push || exit 0
 
       - name: 上传 APK
         uses: actions/upload-artifact@v4

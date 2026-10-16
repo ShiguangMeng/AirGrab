@@ -1,0 +1,1 @@
+/Users/runner/work/AirGrab/AirGrab/ios/AirGrab/App/AppModel.swift:155:17: error: cannot assign to property: 'payloadName' setter is inaccessible

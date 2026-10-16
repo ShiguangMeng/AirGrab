@@ -24,10 +24,14 @@ public sealed partial class MainWindow : Window
         Title = "AirGrab";
         ConfigureBackdrop();
         ConfigureTitleBar();
-        ApplyNavState();
-        UpdateHeader(_currentTag);
 
         Model.Start();
+        ApplyNavState();
+        ShowPage(_currentTag);
+        SyncUi();
+
+        // 设备数、收发记录变化时同步各页面的动态文案
+        Model.PropertyChanged += (_, _) => SyncUi();
 
         Closed += (_, _) => Model.Dispose();
     }
@@ -61,9 +65,28 @@ public sealed partial class MainWindow : Window
     private void OnNavTapped(object sender, TappedRoutedEventArgs e)
     {
         if (sender is not FrameworkElement element) return;
+
         _currentTag = element.Tag?.ToString() ?? "send";
-        UpdateHeader(_currentTag);
         ApplyNavState();
+        ShowPage(_currentTag);
+        SyncUi();
+    }
+
+    /// <summary>切换页面可见性 —— 四个页面各自持有独立内容，不存在「只改标题」的假切换。</summary>
+    private void ShowPage(string tag)
+    {
+        PageSend.Visibility = tag == "send" ? Visibility.Visible : Visibility.Collapsed;
+        PageDevices.Visibility = tag == "devices" ? Visibility.Visible : Visibility.Collapsed;
+        PageHistory.Visibility = tag == "history" ? Visibility.Visible : Visibility.Collapsed;
+        PageSettings.Visibility = tag == "settings" ? Visibility.Visible : Visibility.Collapsed;
+
+        TitleBarSubtitle.Text = tag switch
+        {
+            "devices" => "设备",
+            "history" => "记录",
+            "settings" => "设置",
+            _ => "投送"
+        };
     }
 
     private void ApplyNavState()
@@ -85,31 +108,58 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void UpdateHeader(string tag)
+    /// <summary>把模型状态映射到各页面的动态文案。</summary>
+    private void SyncUi()
     {
-        switch (tag)
-        {
-            case "devices":
-                PageTitle.Text = "设备";
-                PageSubtitle.Text = $"{Model.PeerCount} 台设备在线 · UDP :25585 广播发现";
-                TitleBarSubtitle.Text = "设备";
-                break;
-            case "history":
-                PageTitle.Text = "记录";
-                PageSubtitle.Text = $"已接收 {Model.Inbox.Count} 项 · 已投送 {Model.Outbox.Count} 项";
-                TitleBarSubtitle.Text = "记录";
-                break;
-            case "settings":
-                PageTitle.Text = "设置";
-                PageSubtitle.Text = $"手势通道：模拟输入 · 接收服务 :{FileTransfer.TcpPort}";
-                TitleBarSubtitle.Text = "设置";
-                break;
-            default:
-                PageTitle.Text = "投送";
-                PageSubtitle.Text = $"{Model.PeerCount} 台设备在附近 · 隔空手势已开启";
-                TitleBarSubtitle.Text = "投送";
-                break;
-        }
+        SendSubtitle.Text = Model.PeerCount > 0
+            ? $"{Model.PeerCount} 台设备在附近 · 松手投送至最近设备"
+            : "附近暂无设备 · 松手投送至本机回环，内容会真实落地";
+
+        DevicesSubtitle.Text = $"{Model.PeerCount} 台局域网设备 · UDP :25585 广播发现";
+        HistorySubtitle.Text = $"已接收 {Model.Inbox.Count} 项 · 已投送 {Model.Outbox.Count} 项";
+        SettingsSubtitle.Text = $"接收服务 :{FileTransfer.TcpPort} · 发现端口 :25585";
+
+        ServiceLine.Text =
+            $"接收服务：{(Model.IsServing ? "已监听 :25586" : "未启动")}\n" +
+            $"状态：{Model.StatusLine}\n" +
+            $"日志：{Model.TransferLog}";
+    }
+
+    // ---------------------------------------------------------------- 操作
+
+    private async void OnCaptureClicked(object sender, RoutedEventArgs e)
+    {
+        await Model.CaptureFromClipboardAsync();
+        SyncUi();
+    }
+
+    private async void OnSendFirstClicked(object sender, RoutedEventArgs e)
+    {
+        Payload? payload = Model.FirstOutboxItem;
+        if (payload is null) return;
+
+        await Model.SendAsync(payload, Model.ResolveTarget());
+        SyncUi();
+    }
+
+    private void OnClearHistoryClicked(object sender, RoutedEventArgs e)
+    {
+        Model.Inbox.Clear();
+        SyncUi();
+    }
+
+    private void OnChannelSimClicked(object sender, RoutedEventArgs e)
+    {
+        ChannelDetail.Text =
+            "当前通道：模拟输入。由指针事件驱动手势状态机 —— 按住卡片即进入抓取，" +
+            "移动为搬运，松手为投送。该通道与摄像头通道共用同一套状态机与防误触闸门。";
+    }
+
+    private void OnChannelCamClicked(object sender, RoutedEventArgs e)
+    {
+        ChannelDetail.Text =
+            "当前通道：摄像头识别。手部关键点推理管线尚未接入 —— " +
+            "该通道需要 21 关键点模型就位后才能产生输入，接入前请使用模拟输入。";
     }
 
     // ---------------------------------------------------------------- 抓取投送
@@ -124,11 +174,12 @@ public sealed partial class MainWindow : Window
 
         var position = e.GetCurrentPoint(RootGrid).Position;
         DragGhostName.Text = payload.Name;
-        DragGhostHint.Text = Model.Peers.Count > 0 ? "松开投送至最近的设备" : "附近暂无设备";
+        DragGhostHint.Text = Model.PeerCount > 0 ? "松开投送至最近的设备" : "松开投送至本机回环";
         DragGhost.Visibility = Visibility.Visible;
         MoveGhost(position.X, position.Y);
 
         Model.BeginSimulatedDrag(payload);
+        SyncUi();
 
         element.CapturePointer(e.Pointer);
         e.Handled = true;
@@ -141,7 +192,7 @@ public sealed partial class MainWindow : Window
         MoveGhost(position.X, position.Y);
     }
 
-    private void OnPayloadPointerReleased(object sender, PointerRoutedEventArgs e)
+    private async void OnPayloadPointerReleased(object sender, PointerRoutedEventArgs e)
     {
         if (_dragPayload is null) return;
 
@@ -152,11 +203,12 @@ public sealed partial class MainWindow : Window
 
         DragGhost.Visibility = Visibility.Collapsed;
 
-        Peer? target = Model.Peers.Count > 0 ? Model.Peers[0] : null;
-        Model.EndSimulatedDrag(target, _dragPayload);
-        UpdateHeader(_currentTag);
-
+        Payload payload = _dragPayload;
         _dragPayload = null;
+
+        await Model.SendAsync(payload, Model.ResolveTarget());
+        SyncUi();
+
         e.Handled = true;
     }
 

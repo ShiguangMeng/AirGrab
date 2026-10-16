@@ -34,7 +34,7 @@
                     VerticalAlignment="Center" />
                 <TextBlock
                     x:Name="TitleBarSubtitle"
-                    Text="设备"
+                    Text="投送"
                     FontSize="13" Opacity="0.7"
                     VerticalAlignment="Center" />
             </StackPanel>
@@ -67,117 +67,73 @@
                 </Border>
             </StackPanel>
 
-            <!-- 内容区 -->
-            <ScrollViewer Grid.Column="1" Padding="26,14,26,22" VerticalScrollBarVisibility="Auto">
-                <StackPanel Spacing="18">
+            <!-- 页面容器：四个页面各自独立，切换可见性 -->
+            <Grid Grid.Column="1">
 
-                    <!-- 页头 -->
-                    <StackPanel Spacing="4">
-                        <TextBlock
-                            x:Name="PageTitle"
-                            Text="附近设备"
-                            FontSize="26" FontWeight="SemiBold" />
-                        <TextBlock
-                            x:Name="PageSubtitle"
-                            Text="正在发现局域网内的设备…"
-                            FontSize="12.5" Opacity="0.66" />
-                    </StackPanel>
+                <!-- ========== 投送 ========== -->
+                <ScrollViewer x:Name="PageSend" Padding="26,14,26,24" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="投送" FontSize="26" FontWeight="SemiBold" />
+                            <TextBlock x:Name="SendSubtitle" FontSize="12.5" Opacity="0.66" />
+                        </StackPanel>
 
-                    <!-- 隔空手势状态 -->
-                    <Border
-                        CornerRadius="9" Padding="14,12"
-                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1">
-                        <StackPanel Spacing="10">
-                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                <Border
-                                    x:Name="HandChip"
-                                    Width="42" Height="42" CornerRadius="12"
-                                    Background="{ThemeResource AccentFillColorDefaultBrush}">
-                                    <TextBlock
-                                        x:Name="HandGlyph"
-                                        Text="✋" FontSize="19"
-                                        HorizontalAlignment="Center" VerticalAlignment="Center"
-                                        Foreground="White" />
-                                </Border>
-                                <StackPanel VerticalAlignment="Center" Spacing="3">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Border
+                            CornerRadius="9" Padding="14,12"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1">
+                            <StackPanel Spacing="10">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Border
+                                        Width="42" Height="42" CornerRadius="12"
+                                        Background="{ThemeResource AccentFillColorDefaultBrush}">
                                         <TextBlock
-                                            Text="{x:Bind Model.StateTitle, Mode=OneWay}"
-                                            FontSize="14" FontWeight="SemiBold" />
+                                            x:Name="HandGlyph"
+                                            Text="✋" FontSize="19"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                                            Foreground="White" />
+                                    </Border>
+                                    <StackPanel VerticalAlignment="Center" Spacing="3">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock
+                                                Text="{x:Bind Model.StateTitle, Mode=OneWay}"
+                                                FontSize="14" FontWeight="SemiBold" />
+                                            <TextBlock
+                                                Text="{x:Bind Model.StateCode, Mode=OneWay}"
+                                                FontSize="10.5" FontFamily="Consolas" Opacity="0.5"
+                                                VerticalAlignment="Center" />
+                                        </StackPanel>
                                         <TextBlock
-                                            Text="{x:Bind Model.StateCode, Mode=OneWay}"
-                                            FontSize="10.5" FontFamily="Consolas" Opacity="0.5"
-                                            VerticalAlignment="Center" />
+                                            Text="{x:Bind Model.StateHint, Mode=OneWay}"
+                                            FontSize="11.5" Opacity="0.66" />
                                     </StackPanel>
                                     <TextBlock
-                                        Text="{x:Bind Model.StateHint, Mode=OneWay}"
-                                        FontSize="11.5" Opacity="0.66" />
+                                        Text="{x:Bind Model.CarriedName, Mode=OneWay}"
+                                        FontSize="11" FontFamily="Consolas" Opacity="0.55"
+                                        VerticalAlignment="Center" Margin="12,0,0,0" />
                                 </StackPanel>
-                                <TextBlock
-                                    Text="{x:Bind Model.CarriedName, Mode=OneWay}"
-                                    FontSize="11" FontFamily="Consolas" Opacity="0.55"
-                                    VerticalAlignment="Center" Margin="12,0,0,0" />
+
+                                <ProgressBar
+                                    Maximum="4"
+                                    Value="{x:Bind Model.StateStep, Mode=OneWay}"
+                                    Height="4" CornerRadius="2" />
                             </StackPanel>
+                        </Border>
 
-                            <ProgressBar
-                                Maximum="4"
-                                Value="{x:Bind Model.StateStep, Mode=OneWay}"
-                                Height="4" CornerRadius="2" />
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 附近设备 -->
-                    <StackPanel Spacing="10">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <TextBlock Text="附近设备" FontSize="13" FontWeight="SemiBold" />
+                            <Button x:Name="CaptureButton" Content="从剪贴板抓取" Click="OnCaptureClicked" />
+                            <Button Content="投送首项" Click="OnSendFirstClicked" />
+                            <Button Content="清空记录" Click="OnClearHistoryClicked" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="可抓取内容" FontSize="13" FontWeight="SemiBold" />
                             <TextBlock
-                                Text="{x:Bind Model.PeerCount, Mode=OneWay}"
+                                Text="{x:Bind Model.Outbox.Count, Mode=OneWay}"
                                 FontSize="11.5" FontFamily="Consolas" Opacity="0.5"
                                 VerticalAlignment="Center" />
                         </StackPanel>
-
-                        <ItemsControl ItemsSource="{x:Bind Model.Peers}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="3" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="core:Peer">
-                                    <Border
-                                        Width="300" Margin="0,0,13,13"
-                                        CornerRadius="7" Padding="13,11"
-                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="1">
-                                        <StackPanel Orientation="Horizontal" Spacing="11">
-                                            <Border
-                                                Width="34" Height="34" CornerRadius="9"
-                                                Background="{ThemeResource AccentFillColorDefaultBrush}">
-                                                <TextBlock
-                                                    Text="{x:Bind Glyph}"
-                                                    FontFamily="Segoe Fluent Icons" FontSize="15"
-                                                    Foreground="White"
-                                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                            </Border>
-                                            <StackPanel VerticalAlignment="Center" Spacing="2">
-                                                <TextBlock Text="{x:Bind Name}" FontSize="12.8" FontWeight="SemiBold" />
-                                                <TextBlock
-                                                    Text="{x:Bind Platform}"
-                                                    FontSize="11" Opacity="0.6" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-
-                    <!-- 最近投送 -->
-                    <StackPanel Spacing="10">
-                        <TextBlock Text="最近投送" FontSize="13" FontWeight="SemiBold" />
 
                         <ItemsControl ItemsSource="{x:Bind Model.Outbox}">
                             <ItemsControl.ItemsPanel>
@@ -230,33 +186,215 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+
+                        <TextBlock
+                            Text="按住卡片拖动 = 握拳抓取；松手 = 张开手掌投送。附近没有设备时投送至本机回环，内容会真实落地。"
+                            FontSize="11.5" Opacity="0.6" TextWrapping="Wrap" />
                     </StackPanel>
+                </ScrollViewer>
 
-                    <!-- 传输日志 -->
-                    <Border
-                        CornerRadius="9" Padding="14,12"
-                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1">
-                        <StackPanel Spacing="7">
-                            <TextBlock Text="传输通道" FontSize="12.5" FontWeight="SemiBold" />
-                            <TextBlock
-                                Text="{x:Bind Model.TransferLog, Mode=OneWay}"
-                                FontSize="11.5" FontFamily="Consolas" Opacity="0.7"
-                                TextWrapping="Wrap" />
-                            <ProgressBar
-                                Maximum="1"
-                                Value="{x:Bind Model.TransferProgress, Mode=OneWay}"
-                                Height="3" />
-                            <TextBlock
-                                Text="AGG|&lt;type&gt;|&lt;size&gt;|&lt;name&gt;|&lt;payload&gt;   ·   TCP 分片 64 KB + 逐片 CRC32"
-                                FontSize="10.5" FontFamily="Consolas" Opacity="0.45"
-                                TextWrapping="Wrap" />
+                <!-- ========== 设备 ========== -->
+                <ScrollViewer x:Name="PageDevices" Padding="26,14,26,24"
+                              Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="设备" FontSize="26" FontWeight="SemiBold" />
+                            <TextBlock x:Name="DevicesSubtitle" FontSize="12.5" Opacity="0.66" />
                         </StackPanel>
-                    </Border>
 
-                </StackPanel>
-            </ScrollViewer>
+                        <Border
+                            CornerRadius="9" Padding="14,12"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Border Width="38" Height="38" CornerRadius="10"
+                                        Background="{ThemeResource AccentFillColorDefaultBrush}">
+                                    <TextBlock Text="本" FontSize="14" Foreground="White"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="本机（回环）" FontSize="13" FontWeight="SemiBold" />
+                                    <TextBlock Text="始终可用 · 投送内容直接落到本机" FontSize="11" Opacity="0.6" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="局域网设备" FontSize="13" FontWeight="SemiBold" />
+
+                        <ItemsControl ItemsSource="{x:Bind Model.Peers}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="3" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="core:Peer">
+                                    <Border
+                                        Width="300" Margin="0,0,13,13"
+                                        CornerRadius="7" Padding="13,11"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1">
+                                        <StackPanel Orientation="Horizontal" Spacing="11">
+                                            <Border Width="34" Height="34" CornerRadius="9"
+                                                    Background="{ThemeResource AccentFillColorDefaultBrush}">
+                                                <TextBlock Text="{x:Bind Platform}"
+                                                           FontSize="11" Foreground="White"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                                <TextBlock Text="{x:Bind Name}" FontSize="12.8" FontWeight="SemiBold" />
+                                                <TextBlock Text="{x:Bind Address}" FontSize="11" Opacity="0.6" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock
+                            Text="尚未发现局域网设备时，投送会自动回落到本机回环。发现依靠 UDP 广播，跨网段或防火墙拦截会导致收不到信标。"
+                            FontSize="11.5" Opacity="0.6" TextWrapping="Wrap" />
+
+                        <Border
+                            CornerRadius="9" Padding="14,12"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="发现机制" FontSize="12.5" FontWeight="SemiBold" />
+                                <TextBlock
+                                    Text="UDP 广播信标每 2 秒一次，端口 25585；超过 8 秒未续期即判定离线。不依赖账号体系。"
+                                    FontSize="11.5" Opacity="0.7" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- ========== 记录 ========== -->
+                <ScrollViewer x:Name="PageHistory" Padding="26,14,26,24"
+                              Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="记录" FontSize="26" FontWeight="SemiBold" />
+                            <TextBlock x:Name="HistorySubtitle" FontSize="12.5" Opacity="0.66" />
+                        </StackPanel>
+
+                        <TextBlock Text="已接收" FontSize="13" FontWeight="SemiBold" />
+                        <ItemsControl ItemsSource="{x:Bind Model.Inbox}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="core:Payload">
+                                    <Border
+                                        Margin="0,0,0,9" Padding="12,10"
+                                        CornerRadius="7"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1">
+                                        <StackPanel Orientation="Horizontal" Spacing="11">
+                                            <Border Width="32" Height="32" CornerRadius="8">
+                                                <Border.Background>
+                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                        <GradientStop Color="#14D6A4" Offset="0" />
+                                                        <GradientStop Color="#3B8DFF" Offset="1" />
+                                                    </LinearGradientBrush>
+                                                </Border.Background>
+                                                <TextBlock Text="{x:Bind ExtensionTag}" FontSize="9" Foreground="White"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                                <TextBlock Text="{x:Bind Name}" FontSize="12.5" FontWeight="SemiBold" />
+                                                <TextBlock Text="{x:Bind SizeText}" FontSize="10.5"
+                                                           FontFamily="Consolas" Opacity="0.55" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="已投送" FontSize="13" FontWeight="SemiBold" />
+                        <ItemsControl ItemsSource="{x:Bind Model.Outbox}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="core:Payload">
+                                    <Border
+                                        Margin="0,0,0,9" Padding="12,10"
+                                        CornerRadius="7"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1">
+                                        <StackPanel Orientation="Horizontal" Spacing="11">
+                                            <Border Width="32" Height="32" CornerRadius="8">
+                                                <Border.Background>
+                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                        <GradientStop Color="#5B8DEF" Offset="0" />
+                                                        <GradientStop Color="#7A4BFF" Offset="1" />
+                                                    </LinearGradientBrush>
+                                                </Border.Background>
+                                                <TextBlock Text="{x:Bind ExtensionTag}" FontSize="9" Foreground="White"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                                <TextBlock Text="{x:Bind Name}" FontSize="12.5" FontWeight="SemiBold" />
+                                                <TextBlock Text="{x:Bind SizeText}" FontSize="10.5"
+                                                           FontFamily="Consolas" Opacity="0.55" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- ========== 设置 ========== -->
+                <ScrollViewer x:Name="PageSettings" Padding="26,14,26,24"
+                              Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="设置" FontSize="26" FontWeight="SemiBold" />
+                            <TextBlock x:Name="SettingsSubtitle" FontSize="12.5" Opacity="0.66" />
+                        </StackPanel>
+
+                        <TextBlock Text="手势通道" FontSize="13" FontWeight="SemiBold" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button x:Name="ChannelSimButton" Content="模拟输入" Click="OnChannelSimClicked" />
+                            <Button x:Name="ChannelCamButton" Content="摄像头识别" Click="OnChannelCamClicked" />
+                        </StackPanel>
+                        <TextBlock
+                            x:Name="ChannelDetail"
+                            FontSize="11.5" Opacity="0.66" TextWrapping="Wrap" />
+
+                        <Border
+                            CornerRadius="9" Padding="14,12"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="通道说明" FontSize="12.5" FontWeight="SemiBold" />
+                                <TextBlock
+                                    Text="模拟输入由指针事件驱动同一套手势状态机，用于无摄像头环境；摄像头通道接入手部关键点推理后，两条通道产生的输入结构完全一致，状态机不作区分。"
+                                    FontSize="11.5" Opacity="0.7" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="服务状态" FontSize="13" FontWeight="SemiBold" />
+                        <Border
+                            CornerRadius="9" Padding="14,12"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1">
+                            <StackPanel Spacing="7">
+                                <TextBlock x:Name="ServiceLine" FontSize="11.5" FontFamily="Consolas"
+                                           Opacity="0.75" TextWrapping="Wrap" />
+                                <TextBlock
+                                    Text="AGG|&lt;type&gt;|&lt;size&gt;|&lt;name&gt;|&lt;payload&gt;   ·   UDP :25585 发现 · TCP :25586 传输 · 分片 64 KB + 逐片 CRC32"
+                                    FontSize="10.5" FontFamily="Consolas" Opacity="0.5" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
         </Grid>
 
         <!-- ================= 拖拽浮层 ================= -->

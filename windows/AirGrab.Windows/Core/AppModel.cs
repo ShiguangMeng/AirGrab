@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Microsoft.UI.Dispatching;
 
 namespace AirGrab.Core;
@@ -50,6 +52,21 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
     public double TransferProgress { get; private set; }
     public int PeerCount => Peers.Count;
 
+    /// <summary>
+    /// 本机回环目标。局域网内没有其他设备时，界面把内容投送给它 ——
+    /// 内容会走完整的落地流程（文本进剪贴板、图片落图片库、文件落下载目录），
+    /// 因此单机也能完整验证「抓取 → 搬运 → 投送 → 落地」全链路。
+    /// </summary>
+    public Peer LoopbackPeer { get; } = new(
+        "loopback",
+        "本机（回环）",
+        "Windows",
+        System.Net.IPAddress.Loopback,
+        DateTimeOffset.UtcNow);
+
+    /// <summary>投送目标：优先真实设备，没有则回落到本机回环。</summary>
+    public Peer ResolveTarget() => Peers.Count > 0 ? Peers[0] : LoopbackPeer;
+
     // ---------------------------------------------------------------- 启动
 
     public void Start()
@@ -86,10 +103,13 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
             Raise(nameof(StatusLine));
         });
 
-        Transfer.PayloadReceived += payload => _dispatcher.TryEnqueue(() =>
+        Transfer.PayloadReceived += payload => _dispatcher.TryEnqueue(async () =>
         {
             Inbox.Insert(0, payload);
-            StatusLine = $"已接收 {payload.Name}（{payload.SizeText}）";
+            string? path = await LandPayloadAsync(payload);
+            StatusLine = path is null
+                ? $"已接收 {payload.Name}（{payload.SizeText}）→ {payload.Kind.Landing()}"
+                : $"已接收 {payload.Name}（{payload.SizeText}）→ {path}";
             Raise(nameof(StatusLine));
         });
 
@@ -144,16 +164,108 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
 
     public async Task<bool> SendAsync(Payload payload, Peer? target)
     {
-        if (target is null)
+        target ??= ResolveTarget();
+
+        if (target.Id == LoopbackPeer.Id)
         {
-            StatusLine = "没有可接收的设备，请确认对方已打开 AirGrab";
-            Raise(nameof(StatusLine));
-            return false;
+            string? path = await LandPayloadAsync(payload).ConfigureAwait(true);
+            Inbox.Insert(0, payload);
+            StatusLine = path is null
+                ? $"已投送至本机回环 · {payload.Name} → {payload.Kind.Landing()}"
+                : $"已投送至本机回环 · {payload.Name} → {path}";
+            Gesture.Finish();
+            RaiseAll();
+            return true;
         }
 
         bool ok = await Transfer.SendAsync(payload, target).ConfigureAwait(true);
         Raise(nameof(TransferLog));
         return ok;
+    }
+
+    /// <summary>
+    /// 接收端落地：文本与链接进剪贴板，图片落图片库下的 AirGrab 目录，
+    /// 其余落下载目录下的 AirGrab 目录。返回实际落盘路径；进剪贴板时返回 null。
+    /// </summary>
+    private async Task<string?> LandPayloadAsync(Payload payload)
+    {
+        try
+        {
+            switch (payload.Kind)
+            {
+                case PayloadKind.Text:
+                case PayloadKind.Link:
+                {
+                    var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                    package.SetText(Encoding.UTF8.GetString(payload.Body));
+                    Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+                    return null;
+                }
+
+                default:
+                {
+                    string root = payload.Kind == PayloadKind.Image
+                        ? Environment.GetFolderPath(Environment.SpecialFolder.MyPictures)
+                        : Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                            "Downloads");
+
+                    string directory = Path.Combine(root, "AirGrab");
+                    Directory.CreateDirectory(directory);
+
+                    string safeName = string.Join("_", payload.Name.Split(Path.GetInvalidFileNameChars()));
+                    string fullPath = Path.Combine(directory, safeName);
+
+                    await File.WriteAllBytesAsync(fullPath, payload.Body).ConfigureAwait(true);
+                    return fullPath;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusLine = $"落地失败：{ex.Message}";
+            Raise(nameof(StatusLine));
+            return null;
+        }
+    }
+
+    /// <summary>从剪贴板抓取内容，生成一条真实可投送的载荷。</summary>
+    public async Task<bool> CaptureFromClipboardAsync()
+    {
+        try
+        {
+            var view = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+
+            if (view.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text))
+            {
+                string text = await view.GetTextAsync();
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    bool looksLikeLink =
+                        Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri) &&
+                        (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+                    Payload payload = looksLikeLink
+                        ? Payload.FromLink(text.Trim())
+                        : Payload.FromText(text.Trim());
+
+                    Outbox.Insert(0, payload);
+                    StatusLine = $"已从剪贴板抓取 {payload.Kind.Title()}：{payload.Name}";
+                    Raise(nameof(StatusLine));
+                    return true;
+                }
+            }
+
+            StatusLine = "剪贴板中没有可抓取的文本";
+            Raise(nameof(StatusLine));
+            return false;
+        }
+        catch (Exception ex)
+        {
+            StatusLine = $"读取剪贴板失败：{ex.Message}";
+            Raise(nameof(StatusLine));
+            return false;
+        }
     }
 
     public Payload? FirstOutboxItem => Outbox.Count > 0 ? Outbox[0] : null;

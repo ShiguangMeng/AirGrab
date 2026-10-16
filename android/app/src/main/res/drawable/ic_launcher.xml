@@ -1,0 +1,15 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#5B46C8"
+        android:pathData="M0,0h108v108h-108z" />
+
+    <!-- 抽象手形：四指并拢 + 拇指外张 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,74 L40,50 a4,4 0 0 1 8,0 v13 h3 v-21 a4,4 0 0 1 8,0 v21 h3 v-17 a4,4 0 0 1 8,0 v17 h3 v-11 a4,4 0 0 1 8,0 v19 a15,15 0 0 1 -15,15 h-9 a13,13 0 0 1 -9.2,-3.8 L31,68 a4.4,4.4 0 0 1 6.6,-5.8 z" />
+</vector>

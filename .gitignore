@@ -23,6 +23,9 @@ android/app/build/
 android/local.properties
 *.apk
 
+# MediaPipe 模型由 CI 在构建前下载，不入库
+android/app/src/main/assets/*.task
+
 # 构建产物
 dist/
 build/

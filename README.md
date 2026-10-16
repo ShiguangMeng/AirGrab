@@ -101,11 +101,21 @@ open AirGrab.xcodeproj
 
 ### Android
 
-需要 JDK 17+ 与 Android SDK（platform 34+）。
+需要 JDK 17+ 与 Android SDK（platform 35）。
 
 ```bash
-cd android && ./gradlew assembleDebug
+# 手势识别依赖 MediaPipe 官方模型，需先放到 assets（CI 会自动下载）
+mkdir -p android/app/src/main/assets
+curl -fsSL -o android/app/src/main/assets/hand_landmarker.task \
+  https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
+
+cd android && gradle wrapper --gradle-version 8.11.1 && ./gradlew assembleDebug
 ```
+
+模型缺失时应用不会崩溃 —— `HandPoseDetector.start()` 会捕获失败并把状态置为
+「模型不可用，已回退模拟输入」，此时触摸通道仍然可用。
+
+也可以用 Android Studio 直接打开 `android/` 目录。
 
 ## 设计说明
 

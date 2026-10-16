@@ -3,12 +3,7 @@ name: iOS Build
 on:
   push:
     branches: [main]
-    paths:
-      - 'ios/**'
-      - '.github/workflows/ios.yml'
   pull_request:
-    paths:
-      - 'ios/**'
   workflow_dispatch:
 
 concurrency:

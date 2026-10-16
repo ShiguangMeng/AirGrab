@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 concurrency:
   group: ios-${{ github.ref }}
   cancel-in-progress: true
@@ -41,6 +44,7 @@ jobs:
 
       - name: 编译模拟器版本
         working-directory: ios
+        continue-on-error: true
         run: |
           set -o pipefail
           xcodebuild \
@@ -52,7 +56,24 @@ jobs:
             -derivedDataPath build-sim \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            build
+            build > build.log 2>&1
+          code=$?
+          echo "xcodebuild exit=$code"
+          grep -E "error:" build.log | head -40 || true
+          exit $code
+
+      - name: 回写编译日志（仅在出现错误时）
+        if: always()
+        run: |
+          if [ -f ios/build.log ] && grep -q "error:" ios/build.log; then
+            mkdir -p ci-logs
+            grep -E "error:" ios/build.log | head -60 > ci-logs/ios-errors.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add ci-logs
+            git commit -m "ci: 记录 iOS 编译错误 [skip ci]" || exit 0
+            git push || exit 0
+          fi
 
       - name: 收集模拟器产物
         working-directory: ios

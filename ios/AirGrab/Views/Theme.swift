@@ -31,47 +31,35 @@ enum AGTheme {
 
 /// Liquid Glass 材质封装。
 ///
-/// iOS 26 起直接使用系统玻璃效果；更早的 SDK 回退到超薄材质 + 高光描边。
-/// 两条分支的观感刻意保持一致（同样的圆角、同样的顶部高光），
-/// 因此界面层不需要知道自己跑在哪一版系统上。
+/// 刻意只用 SwiftUI 的通用材质实现，不依赖 iOS 26 才引入的 `glassEffect`：
+/// 后者要求编译机的 SDK 版本足够新，会让构建结果随 runner 上的 Xcode 版本漂移。
+/// 观感上以超薄材质 + 顶部高光描边逼近玻璃的层次与厚度，
+/// 待部署基线统一到 iOS 26 之后可在此处替换为系统玻璃效果。
 struct GlassSurface: ViewModifier {
     var cornerRadius: CGFloat = AGTheme.cornerCard
     var tint: Color?
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            content.glassEffect(glassStyle, in: .rect(cornerRadius: cornerRadius))
-        } else {
-            legacy(content)
-        }
-        #else
-        legacy(content)
-        #endif
-    }
-
-    #if compiler(>=6.2)
-    @available(iOS 26.0, *)
-    private var glassStyle: Glass {
-        if let tint {
-            return Glass.regular.tint(tint.opacity(0.28))
-        }
-        return Glass.regular
-    }
-    #endif
-
-    private func legacy(_ content: Content) -> some View {
         content
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(tint?.opacity(0.22) ?? Color.clear)
+                    }
+            }
+            .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(
-                        LinearGradient(colors: [.white.opacity(0.85), .white.opacity(0.28)],
-                                       startPoint: .top, endPoint: .bottom),
+                        LinearGradient(
+                            colors: [.white.opacity(0.85), .white.opacity(0.28)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
                         lineWidth: 1
                     )
-            )
+            }
     }
 }
 

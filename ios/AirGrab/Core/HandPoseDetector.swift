@@ -281,7 +281,9 @@ extension HandPoseDetector: AVCaptureVideoDataOutputSampleBufferDelegate {
 
     // MARK: - 单帧分析
 
-    private struct RawPose {
+    /// 单帧分析结果。声明为模块内可见 —— `analyze` 是 internal 方法，
+    /// 返回类型不能比它更窄（private 会直接编译不过）。
+    struct RawPose {
         let openness: CGFloat   // 已映射到 0...1
         let ratio: CGFloat      // 原始归一化比值，供标定
         let center: CGPoint

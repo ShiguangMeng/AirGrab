@@ -86,6 +86,10 @@ dotnet build windows/AirGrab.Windows/AirGrab.Windows.csproj -c Release -r win-x6
 工程由 [XcodeGen](https://github.com/yonaskolb/XcodeGen) 从 `ios/project.yml` 生成，
 仓库内不保存 `.xcodeproj`，避免二进制文件冲突。
 
+最低支持 **iOS / iPadOS 16.0**。代码未使用任何 iOS 17+ 的 API，
+版本门槛由 `AnyShapeStyle` 与 `.scrollIndicators(_:axes:)` 决定（两者均为 iOS 16 引入）。
+iPad 与 iPhone 共用同一工程（`TARGETED_DEVICE_FAMILY = 1,2`）。
+
 ```bash
 brew install xcodegen
 cd ios && xcodegen generate

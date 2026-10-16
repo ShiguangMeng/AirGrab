@@ -2,7 +2,7 @@ name: AirGrab
 options:
   bundleIdPrefix: com.shiguangmeng
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "16.0"
   createIntermediateGroups: true
 
 settings:
@@ -16,7 +16,7 @@ targets:
   AirGrab:
     type: application
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "16.0"
     sources:
       - path: AirGrab
     settings:

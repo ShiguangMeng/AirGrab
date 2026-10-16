@@ -19,10 +19,18 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
     public GestureStateMachine Gesture { get; } = new();
     public PeerDiscovery Discovery { get; }
     public FileTransfer Transfer { get; } = new();
+    public HandPoseDetector Detector { get; }
 
     public ObservableCollection<Peer> Peers { get; } = new();
     public ObservableCollection<Payload> Outbox { get; } = new();
     public ObservableCollection<Payload> Inbox { get; } = new();
+
+    /// <summary>手势输入通道。两条通道写入同一套状态机与防误触闸门。</summary>
+    public enum GestureChannel { Simulated, Camera }
+
+    public GestureChannel Channel { get; private set; } = GestureChannel.Simulated;
+    public string CameraStatus { get; private set; } = "摄像头通道未启动";
+    public string CameraDiagnostics { get; private set; } = "—";
 
     public AppModel(DispatcherQueue dispatcher)
     {
@@ -34,8 +42,37 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
             Platform = "Windows"
         };
 
+        Detector = new HandPoseDetector(dispatcher);
+
         SeedSampleContent();
         Wire();
+    }
+
+    /// <summary>
+    /// 切换手势通道。切到摄像头时启动采帧与推理，切回模拟时立即停止 ——
+    /// 摄像头是独占资源，闲置时不占用。
+    /// </summary>
+    public async Task SetChannelAsync(GestureChannel channel)
+    {
+        if (Channel == channel) return;
+
+        Channel = channel;
+
+        if (channel == GestureChannel.Camera)
+        {
+            bool ok = await Detector.StartAsync().ConfigureAwait(true);
+            StatusLine = ok ? "摄像头手势通道已启动" : $"摄像头启动失败：{CameraStatus}";
+        }
+        else
+        {
+            Detector.Stop();
+            Gesture.Finish();
+            StatusLine = "已切换到模拟输入通道";
+        }
+
+        Raise(nameof(Channel));
+        Raise(nameof(StatusLine));
+        RaiseState();
     }
 
     // ---------------------------------------------------------------- 可绑定状态
@@ -208,6 +245,25 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
             TransferProgress = value;
             Raise(nameof(TransferProgress));
         });
+
+        // 摄像头通道：推理出的手部姿态直接喂给状态机，与模拟通道等价。
+        Detector.PoseReady += pose =>
+        {
+            if (Channel != GestureChannel.Camera) return;
+            Gesture.Ingest(pose, DateTimeOffset.UtcNow);
+        };
+
+        Detector.StatusChanged += text => _dispatcher.TryEnqueue(() =>
+        {
+            CameraStatus = text;
+            Raise(nameof(CameraStatus));
+        });
+
+        Detector.DiagnosticsChanged += text => _dispatcher.TryEnqueue(() =>
+        {
+            CameraDiagnostics = text;
+            Raise(nameof(CameraDiagnostics));
+        });
     }
 
     // ---------------------------------------------------------------- 操作
@@ -215,6 +271,13 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
     /// <summary>把拖拽会话映射成与摄像头通道完全一致的状态机输入。</summary>
     public void BeginSimulatedDrag(Payload payload)
     {
+        if (Channel != GestureChannel.Simulated)
+        {
+            StatusLine = "当前是摄像头通道 —— 请用手势抓取，或先切回模拟输入";
+            Raise(nameof(StatusLine));
+            return;
+        }
+
         Gesture.BeginCarrying(payload.Name);
         StatusLine = $"搬运 {payload.Name}，移向目标设备";
         RaiseState();
@@ -447,6 +510,7 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        Detector.Dispose();
         Discovery.Dispose();
         Transfer.Dispose();
     }

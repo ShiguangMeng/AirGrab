@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Graphics;
 
 namespace AirGrab;
@@ -32,6 +33,23 @@ public sealed partial class MainWindow : Window
 
         // 设备数、收发记录变化时同步各页面的动态文案
         Model.PropertyChanged += (_, _) => SyncUi();
+
+        // 摄像头预览帧：由检测器在 UI 线程派发，这里直接换成可绑定的位图源。
+        Model.Detector.PreviewFrame += async bitmap =>
+        {
+            try
+            {
+                var source = new SoftwareBitmapSource();
+                await source.SetBitmapAsync(bitmap);
+                CameraPreviewImage.Source = source;
+            }
+            finally
+            {
+                bitmap.Dispose();
+            }
+        };
+
+        UpdateChannelUi();
 
         Closed += (_, _) => Model.Dispose();
     }
@@ -129,6 +147,9 @@ public sealed partial class MainWindow : Window
             ? $"已手动添加 {Model.ManualPeerCount} 台设备，投送时优先使用。"
             : "手动添加的设备不受广播与超时淘汰影响，长期保留。";
 
+        CameraStatusText.Text = Model.CameraStatus;
+        CameraDiagnosticsText.Text = Model.CameraDiagnostics;
+
         ServiceLine.Text =
             $"接收服务：{(Model.IsServing ? "已监听 :25586" : "未启动")}\n" +
             $"状态：{Model.StatusLine}\n" +
@@ -173,18 +194,32 @@ public sealed partial class MainWindow : Window
         SyncUi();
     }
 
-    private void OnChannelSimClicked(object sender, RoutedEventArgs e)
+    private async void OnChannelSimClicked(object sender, RoutedEventArgs e)
     {
-        ChannelDetail.Text =
-            "当前通道：模拟输入。由指针事件驱动手势状态机 —— 按住卡片即进入抓取，" +
-            "移动为搬运，松手为投送。该通道与摄像头通道共用同一套状态机与防误触闸门。";
+        await Model.SetChannelAsync(AppModel.GestureChannel.Simulated);
+        UpdateChannelUi();
+        SyncUi();
     }
 
-    private void OnChannelCamClicked(object sender, RoutedEventArgs e)
+    private async void OnChannelCamClicked(object sender, RoutedEventArgs e)
     {
-        ChannelDetail.Text =
-            "当前通道：摄像头识别。手部关键点推理管线尚未接入 —— " +
-            "该通道需要 21 关键点模型就位后才能产生输入，接入前请使用模拟输入。";
+        await Model.SetChannelAsync(AppModel.GestureChannel.Camera);
+        UpdateChannelUi();
+        SyncUi();
+    }
+
+    /// <summary>通道相关的界面状态：预览面板可见性与说明文案。</summary>
+    private void UpdateChannelUi()
+    {
+        bool camera = Model.Channel == AppModel.GestureChannel.Camera;
+
+        CameraPanel.Visibility = camera ? Visibility.Visible : Visibility.Collapsed;
+
+        ChannelDetail.Text = camera
+            ? "当前通道：摄像头识别。前置摄像头采帧 → palm_detection 在整帧定位手掌 → " +
+              "handpose 出 21 关键点 → 张开度与掌心位置喂给同一套状态机。"
+            : "当前通道：模拟输入。按住内容卡片即握拳抓取，移动为搬运，松手为张开投送。" +
+              "该通道与摄像头通道共用同一套状态机与四道防误触闸门。";
     }
 
     // ---------------------------------------------------------------- 抓取投送

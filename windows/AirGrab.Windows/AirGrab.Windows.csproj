@@ -16,10 +16,30 @@
     <WindowsPackageType>None</WindowsPackageType>
     <EnableMsixTooling>false</EnableMsixTooling>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <!-- SoftwareBitmap 的像素读取需要经 IMemoryBufferByteAccess 指针访问。 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.25.1" />
+  </ItemGroup>
+
+  <!--
+    手势模型随产物分发，不做运行时下载。
+    palm_detection 在整帧上定位手掌，handpose 在裁剪出的手掌区域上出 21 关键点。
+    两者均为 MediaPipe 官方模型的 ONNX 转换版（Apache 2.0），
+    关键点定义与 iOS 端 Vision 使用的同一套 21 点语义完全一致。
+  -->
+  <ItemGroup>
+    <Content Include="Assets\palm_detection_mediapipe_2023feb.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>Assets\palm_detection_mediapipe_2023feb.onnx</TargetPath>
+    </Content>
+    <Content Include="Assets\handpose_estimation_mediapipe_2023feb.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>Assets\handpose_estimation_mediapipe_2023feb.onnx</TargetPath>
+    </Content>
   </ItemGroup>
 
 </Project>

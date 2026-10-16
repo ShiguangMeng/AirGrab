@@ -1,0 +1,11 @@
+# 源文件统一 LF：Windows 与 Unix 端协作，避免 CRLF 混入 YAML / Swift / shell
+* text=auto eol=lf
+
+# 二进制资源不做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.ipa binary

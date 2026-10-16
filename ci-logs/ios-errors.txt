@@ -1,1 +1,1 @@
-/Users/runner/work/AirGrab/AirGrab/ios/AirGrab/App/AppModel.swift:155:17: error: cannot assign to property: 'payloadName' setter is inaccessible
+/Users/runner/work/AirGrab/AirGrab/ios/AirGrab/Core/HandPoseDetector.swift:293:17: error: method must be declared private because its result uses a private type

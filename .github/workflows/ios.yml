@@ -1,0 +1,117 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 构建 AirGrab (iOS / iPadOS)
+    runs-on: macos-15
+    timeout-minutes: 40
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
+      - name: 选择最新可用 Xcode
+        run: |
+          set -euo pipefail
+          echo "── 已安装的 Xcode ──"
+          ls -d /Applications/Xcode*.app || true
+          LATEST="$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          echo "选用：$LATEST"
+          sudo xcode-select -s "$LATEST"
+          xcodebuild -version
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 由 project.yml 生成 Xcode 工程
+        working-directory: ios
+        run: |
+          xcodegen generate
+          ls -la
+
+      - name: 编译模拟器版本
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project AirGrab.xcodeproj \
+            -scheme AirGrab \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build-sim \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: 收集模拟器产物
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          APP="$(find build-sim/Build/Products -maxdepth 3 -name 'AirGrab.app' | head -1)"
+          echo "模拟器产物：$APP"
+          if [ -n "$APP" ]; then
+            cp -R "$APP" dist/
+            (cd dist && zip -qry AirGrab-simulator.zip AirGrab.app)
+          fi
+          ls -la dist
+
+      - name: 编译真机版本并打包未签名 IPA
+        continue-on-error: true
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project AirGrab.xcodeproj \
+            -scheme AirGrab \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build-dev \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+          APP="$(find build-dev/Build/Products -maxdepth 3 -name 'AirGrab.app' | head -1)"
+          echo "真机产物：$APP"
+          if [ -n "$APP" ]; then
+            mkdir -p ipa/Payload
+            cp -R "$APP" ipa/Payload/
+            (cd ipa && zip -qry ../dist/AirGrab-unsigned.ipa Payload)
+          fi
+          ls -la dist
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirGrab-iOS-${{ github.sha }}
+          path: ios/dist/*
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: 汇总
+        run: |
+          {
+            echo "## AirGrab iOS 构建结果"
+            echo ""
+            echo "- Runner：macOS（${{ runner.os }}）"
+            echo "- 产物：模拟器 .app 压缩包，以及可侧载的未签名 IPA"
+            echo "- 未签名 IPA 需用 Sideloadly / AltStore 配合你自己的 Apple ID 签名后才能安装"
+          } >> "$GITHUB_STEP_SUMMARY"

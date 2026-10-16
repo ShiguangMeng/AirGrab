@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AirGrab · 隔空手势抓取投送 · 四端 UI 高保真原型</title>
+<style>
+/* ============================================================
+   AirGrab UI Prototype — 设计令牌
+   四端共用一套令牌骨架，各端皮肤通过作用域覆盖实现差异
+   ============================================================ */
+:root{
+  --page-bg:#e9edf5;
+  --page-bg-accent-a:rgba(99,140,255,.20);
+  --page-bg-accent-b:rgba(150,120,255,.16);
+  --page-bg-accent-c:rgba(90,200,220,.14);
+  --ink:#0e1626;
+  --ink-2:#5a657a;
+  --ink-3:#8b96ab;
+  --hair:rgba(14,22,38,.09);
+  --panel:rgba(255,255,255,.68);
+  --panel-solid:#fff;
+
+  --device-shadow:
+    0 2px 4px rgba(14,22,38,.05),
+    0 18px 36px -14px rgba(14,22,38,.22),
+    0 48px 90px -30px rgba(14,22,38,.30);
+
+  --font-ui:"Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  --font-mono:"Cascadia Code",ui-monospace,"SF Mono",Consolas,monospace;
+  --ease-spring:cubic-bezier(.22,1.4,.36,1);
+  --ease-out:cubic-bezier(.22,.9,.3,1);
+}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:var(--font-ui);
+  color:var(--ink);
+  background:var(--page-bg);
+  min-height:100%;
+  padding:0 0 64px;
+  overflow-x:auto;
+  -webkit-font-smoothing:antialiased;
+}
+/* 页面背景：柔和光斑 + 细网格，营造“设备悬浮于工作台”的纵深感 */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
+  background:
+    radial-gradient(1200px 700px at 12% -10%, var(--page-bg-accent-a), transparent 62%),
+    radial-gradient(1000px 620px at 92% 4%, var(--page-bg-accent-b), transparent 60%),
+    radial-gradient(900px 700px at 50% 108%, var(--page-bg-accent-c), transparent 62%),
+    var(--page-bg);
+}
+body::after{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.5;
+  background-image:
+    linear-gradient(rgba(14,22,38,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(14,22,38,.035) 1px, transparent 1px);
+  background-size:44px 44px;
+  mask-image:radial-gradient(1200px 800px at 50% 30%, #000 30%, transparent 88%);
+  -webkit-mask-image:radial-gradient(1200px 800px at 50% 30%, #000 30%, transparent 88%);
+}
+
+/* ============================================================
+   页面框架
+   ============================================================ */
+.shell{width:1200px;margin:0 auto;padding:34px 0 0}
+
+.topbar{
+  display:flex;align-items:center;gap:18px;
+  padding:0 6px 26px;
+}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.brand-mark{
+  width:42px;height:42px;border-radius:13px;flex:none;
+  display:grid;place-items:center;color:#fff;
+  background:linear-gradient(150deg,#3b6dff,#7a4bff 55%,#b64bff);
+  box-shadow:0 10px 22px -8px rgba(88,74,255,.72), inset 0 1px 0 rgba(255,255,255,.45);
+}
+.brand-mark svg{width:23px;height:23px}
+.brand-text h1{font-size:19px;font-weight:660;letter-spacing:-.3px;line-height:1.15}
+.brand-text p{font-size:12px;color:var(--ink-2);letter-spacing:.2px;margin-top:2px}
+.topbar-spacer{flex:1}
+
+.chip{
+  display:inline-flex;align-items:center;gap:7px;
+  height:34px;padding:0 13px;border-radius:11px;
+  background:var(--panel);backdrop-filter:blur(18px) saturate(150%);
+  -webkit-backdrop-filter:blur(18px) saturate(150%);
+  border:1px solid rgba(255,255,255,.7);
+  box-shadow:0 1px 2px rgba(14,22,38,.06), 0 8px 20px -12px rgba(14,22,38,.24);
+  font-size:12.5px;color:var(--ink-2);white-space:nowrap;
+}
+.chip b{color:var(--ink);font-weight:600}
+.dot{width:7px;height:7px;border-radius:50%;flex:none;background:#c3cbd9;transition:.3s}
+.dot.live{background:#19c37d;box-shadow:0 0 0 3px rgba(25,195,125,.18)}
+.dot.warn{background:#f0a020;box-shadow:0 0 0 3px rgba(240,160,32,.16)}
+.chip button{
+  font:inherit;font-size:12.5px;color:var(--ink-2);cursor:pointer;
+  background:none;border:0;padding:0 2px;
+}
+.chip button:hover{color:var(--ink)}
+
+/* ============================================================
+   舞台与设备容器
+   ============================================================ */
+.stage{display:flex;flex-direction:column;gap:52px;align-items:center}
+
+.device{
+  position:relative;flex:none;
+  transition:transform .42s var(--ease-spring), filter .3s var(--ease-out);
+}
+.device.is-target{transform:translateY(-5px)}
+.device.is-target .screen{box-shadow:0 0 0 3px rgba(59,109,255,.85), 0 0 0 12px rgba(59,109,255,.16), var(--device-shadow)}
+.device.is-locked{filter:saturate(.62) opacity(.78)}
+
+/* 接收提示浮标 */
+.drop-hint{
+  position:absolute;left:50%;top:-16px;transform:translate(-50%,-6px) scale(.9);
+  opacity:0;pointer-events:none;transition:.26s var(--ease-spring);
+  display:flex;align-items:center;gap:7px;
+  padding:7px 13px;border-radius:99px;white-space:nowrap;
+  background:#1d2438;color:#fff;font-size:11.5px;font-weight:560;letter-spacing:.2px;
+  box-shadow:0 12px 26px -10px rgba(14,22,38,.7);z-index:40;
+}
+.drop-hint svg{width:14px;height:14px}
+.device.is-target .drop-hint{opacity:1;transform:translate(-50%,-14px) scale(1)}
+
+.screen{
+  position:relative;overflow:hidden;
+  box-shadow:var(--device-shadow);
+  transition:box-shadow .3s var(--ease-out);
+}
+
+/* ---------- Windows 窗口 ---------- */
+.dev-windows{width:1200px}
+.dev-windows .screen{border-radius:12px;border:1px solid rgba(14,22,38,.13);background:#f6f7fb}
+
+/* ---------- 手机通用 ---------- */
+.dev-phone .screen{
+  width:296px;height:632px;border-radius:44px;
+  border:9px solid #10141f;background:#000;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14), var(--device-shadow);
+}
+.dev-phone .notch{
+  position:absolute;top:9px;left:50%;transform:translateX(-50%);
+  width:104px;height:29px;border-radius:99px;background:#07090f;z-index:30;
+  display:flex;align-items:center;justify-content:flex-end;padding-right:11px;
+}
+.dev-phone .notch i{width:7px;height:7px;border-radius:50%;background:#151d2e;box-shadow:inset 0 0 3px rgba(96,118,160,.6)}
+.dev-phone .home-bar{
+  position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
+  width:112px;height:4.5px;border-radius:99px;background:rgba(0,0,0,.32);z-index:30;
+}
+.dev-android .home-bar{background:rgba(0,0,0,.28)}
+.dev-android .notch{width:11px;height:11px;border-radius:50%;top:15px;padding:0;justify-content:center}
+
+/* ---------- 平板 ---------- */
+.dev-tablet .screen{
+  width:452px;height:604px;border-radius:26px;
+  border:11px solid #dfe3ea;background:#000;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.5), var(--device-shadow);
+}
+
+/* ============================================================
+   各端皮肤
+   ============================================================ */
+
+/* ---------- Windows / WinUI 3 (Fluent 2 + Mica) ---------- */
+.dev-windows{
+  --ac:#0067c0; --ac-ink:#fff; --ac-soft:#e9f2fc;
+  --w-ink:#16191f; --w-ink-2:#5a6068; --w-ink-3:#8a9099;
+  --w-surface:#fbfbfd; --w-card:rgba(255,255,255,.86); --w-stroke:rgba(0,0,0,.075);
+  --w-fill:rgba(0,0,0,.035); --w-fill-2:rgba(0,0,0,.062);
+}
+.win-titlebar{
+  height:44px;display:flex;align-items:stretch;
+  padding-left:14px;user-select:none;position:relative;z-index:20;
+  background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.66));
+  backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);
+  border-bottom:1px solid var(--w-stroke);
+}
+.win-tb-left{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.win-logo{width:19px;height:19px;color:var(--ac);flex:none}
+.win-tb-left span{font-size:12.5px;font-weight:600;color:var(--w-ink);letter-spacing:-.1px}
+.win-tb-left i{width:1px;height:15px;background:var(--w-stroke);margin:0 3px}
+.win-tb-left em{font-style:normal;font-size:12.5px;color:var(--w-ink-2)}
+.win-caption{display:flex;align-items:stretch}
+.win-caption button{
+  width:47px;border:0;background:none;cursor:pointer;color:var(--w-ink-2);
+  display:grid;place-items:center;transition:background .12s;
+}
+.win-caption button:hover{background:var(--w-fill-2)}
+.win-caption button.close:hover{background:#c42b1c;color:#fff}
+.win-caption svg{width:11px;height:11px}
+
+.win-body{display:flex;min-height:0}
+.win-rail{
+  width:50px;flex:none;padding:8px 0;display:flex;flex-direction:column;gap:3px;align-items:center;
+  background:linear-gradient(180deg,rgba(255,255,255,.5),rgba(255,255,255,.3));
+  border-right:1px solid var(--w-stroke);
+}
+.win-rail b{
+  width:37px;height:37px;border-radius:6px;display:grid;place-items:center;color:var(--w-ink-2);
+  position:relative;cursor:pointer;transition:.15s;
+}
+.win-rail b:hover{background:var(--w-fill)}
+.win-rail b.on{background:var(--ac-soft);color:var(--ac)}
+.win-rail b.on::before{
+  content:"";position:absolute;left:-8px;top:50%;transform:translateY(-50%);
+  width:3px;height:17px;border-radius:99px;background:var(--ac);
+}
+.win-rail svg{width:17px;height:17px}
+
+.win-main{flex:1;min-width:0;padding:24px 28px;overflow:hidden;display:flex;flex-direction:column;gap:20px}
+.win-head{display:flex;align-items:flex-end;gap:14px}
+.win-head h2{font-size:25px;font-weight:640;letter-spacing:-.55px;color:var(--w-ink)}
+.win-head p{font-size:12.5px;color:var(--w-ink-2);padding-bottom:4px}
+.win-search{
+  margin-left:auto;display:flex;align-items:center;gap:8px;height:31px;padding:0 11px;width:216px;
+  border-radius:5px;background:var(--w-card);border:1px solid var(--w-stroke);
+  border-bottom-color:rgba(0,0,0,.16);font-size:12.5px;color:var(--w-ink-3);
+}
+.win-search svg{width:13px;height:13px;flex:none}
+
+.win-sec-title{
+  font-size:12.5px;font-weight:620;color:var(--w-ink-2);letter-spacing:.1px;
+  display:flex;align-items:center;gap:8px;
+}
+.win-sec-title s{flex:1;height:1px;background:var(--w-stroke);text-decoration:none}
+
+.peer-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.peer{
+  display:flex;align-items:center;gap:11px;padding:13px 14px;border-radius:7px;
+  background:var(--w-card);border:1px solid var(--w-stroke);
+  box-shadow:0 1px 2px rgba(0,0,0,.045);transition:.18s var(--ease-out);
+}
+.peer:hover{background:#fff;box-shadow:0 4px 14px -6px rgba(0,0,0,.2);transform:translateY(-1px)}
+.peer-ico{
+  width:33px;height:33px;border-radius:8px;flex:none;display:grid;place-items:center;color:#fff;font-size:15px;
+}
+.peer-ico svg{width:16px;height:16px}
+.peer-meta{min-width:0;flex:1}
+.peer-meta b{display:block;font-size:12.8px;font-weight:600;color:var(--w-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.peer-meta s{display:block;text-decoration:none;font-size:11px;color:var(--w-ink-3);margin-top:2px}
+.bars{display:flex;align-items:flex-end;gap:2px;height:13px;flex:none}
+.bars i{width:3px;border-radius:1px;background:var(--w-fill-2)}
+.bars i:nth-child(1){height:4px}.bars i:nth-child(2){height:7px}
+.bars i:nth-child(3){height:10px}.bars i:nth-child(4){height:13px}
+.bars.q4 i{background:var(--ac)}
+.bars.q3 i:nth-child(-n+3){background:var(--ac)}
+.bars.q2 i:nth-child(-n+2){background:var(--ac)}
+
+.win-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}
+
+/* ---------- Android / Material 3 Expressive ---------- */
+.dev-android{
+  --m3-p:#5b46c8; --m3-op:#fff;
+  --m3-pc:#e6ddff; --m3-opc:#190055;
+  --m3-tc:#ffd9e2; --m3-otc:#3c0020;
+  --m3-sc:#e3e0f5;
+  --m3-bg:#fdf7ff; --m3-sc1:#f6eefe; --m3-sc2:#efe6fa; --m3-sc3:#e8dcf6;
+  --m3-ink:#1c1a22; --m3-ink2:#4a4459; --m3-line:rgba(28,26,34,.09);
+}
+.m3-screen{width:100%;height:100%;background:var(--m3-bg);display:flex;flex-direction:column;position:relative;border-radius:35px;overflow:hidden}
+.m3-status{
+  height:42px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 22px;font-size:11.5px;font-weight:600;color:var(--m3-ink);flex:none;
+}
+.m3-status .r{display:flex;align-items:center;gap:5px}
+.m3-status svg{width:14px;height:12px}
+.m3-bar{padding:6px 20px 14px;flex:none}
+.m3-bar h2{font-size:27px;font-weight:560;letter-spacing:-.7px;color:var(--m3-ink);line-height:1.1}
+.m3-bar p{font-size:12px;color:var(--m3-ink2);margin-top:5px}
+.m3-pills{display:flex;gap:8px;padding:0 20px 14px;flex:none}
+.m3-pill{
+  display:flex;align-items:center;gap:7px;padding:8px 14px;border-radius:99px;
+  background:var(--m3-sc2);font-size:12px;font-weight:540;color:var(--m3-ink2);white-space:nowrap;
+  transition:.24s var(--ease-spring);
+}
+.m3-pill.on{background:var(--m3-pc);color:var(--m3-opc);box-shadow:0 4px 12px -4px rgba(91,70,200,.44)}
+.m3-pill i{width:7px;height:7px;border-radius:50%;background:#22c55e}
+
+.m3-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;padding:0 20px;flex:1;min-height:0;align-content:start;overflow:hidden}
+.m3-nav{
+  flex:none;height:76px;background:var(--m3-sc1);border-radius:26px 26px 0 0;
+  display:flex;align-items:flex-start;justify-content:space-around;padding:13px 8px 0;
+  box-shadow:0 -1px 0 var(--m3-line);
+}
+.m3-nav b{display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--m3-ink2);font-size:10.5px;font-weight:530;cursor:pointer;min-width:56px}
+.m3-nav b i{
+  width:60px;height:31px;border-radius:99px;display:grid;place-items:center;transition:.3s var(--ease-spring);
+}
+.m3-nav b svg{width:18px;height:18px}
+.m3-nav b.on{color:var(--m3-opc);font-weight:640}
+.m3-nav b.on i{background:var(--m3-pc)}
+.m3-fab{
+  position:absolute;right:18px;bottom:90px;width:60px;height:60px;border-radius:19px;z-index:12;
+  background:linear-gradient(140deg,#6d55d8,#4a34ad);display:grid;place-items:center;color:#fff;
+  box-shadow:0 14px 26px -8px rgba(91,70,200,.62), inset 0 1px 0 rgba(255,255,255,.28);
+  cursor:pointer;transition:.3s var(--ease-spring);
+}
+.m3-fab:hover{transform:scale(1.06) rotate(-4deg);border-radius:50%}
+.m3-fab svg{width:25px;height:25px}
+
+/* ---------- iOS / iPadOS · Liquid Glass ---------- */
+.dev-ios,.dev-tablet{
+  --lg-blue:#0a84ff; --lg-ink:#0b0b0f; --lg-ink2:rgba(60,60,67,.62); --lg-ink3:rgba(60,60,67,.36);
+  --lg-glass:rgba(255,255,255,.56);
+  --lg-glass-hi:rgba(255,255,255,.92);
+  --lg-stroke:rgba(255,255,255,.72);
+  --lg-fill:rgba(120,120,128,.13);
+}
+.lg-wall{
+  position:absolute;inset:0;border-radius:inherit;
+  background:
+    radial-gradient(90% 62% at 16% 6%, #ffd0a8 0%, transparent 58%),
+    radial-gradient(84% 60% at 88% 10%, #a7c8ff 0%, transparent 56%),
+    radial-gradient(96% 70% at 50% 104%, #d6b6ff 0%, transparent 62%),
+    linear-gradient(168deg,#fdf6f0 0%,#eef2fb 46%,#f2ecff 100%);
+}
+.lg-screen{position:relative;width:100%;height:100%;display:flex;flex-direction:column;border-radius:35px;overflow:hidden}
+.tablet-screen{border-radius:15px}
+.ios-status{
+  height:50px;display:flex;align-items:flex-end;justify-content:space-between;
+  padding:0 26px 6px;font-size:12.5px;font-weight:600;color:var(--lg-ink);flex:none;letter-spacing:.1px;
+}
+.ios-status .r{display:flex;align-items:center;gap:5px}
+.ios-status svg{height:11px}
+.ios-head{padding:6px 22px 12px;flex:none}
+.ios-head h2{font-size:29px;font-weight:730;letter-spacing:-.9px;color:var(--lg-ink)}
+.ios-head p{font-size:12px;color:var(--lg-ink2);margin-top:4px}
+
+.glass{
+  background:var(--lg-glass);
+  backdrop-filter:blur(26px) saturate(190%);
+  -webkit-backdrop-filter:blur(26px) saturate(190%);
+  border:1px solid var(--lg-stroke);
+  box-shadow:
+    inset 0 1px 0 var(--lg-glass-hi),
+    inset 0 -1px 0 rgba(255,255,255,.34),
+    0 10px 26px -12px rgba(14,22,38,.30);
+}
+.ios-list{display:flex;flex-direction:column;gap:11px;padding:0 18px;flex:1;min-height:0;overflow:hidden}
+.ios-tabwrap{
+  flex:none;display:flex;justify-content:center;padding:12px 0 24px;position:relative;z-index:14;
+}
+.ios-tabbar{
+  display:flex;align-items:center;gap:4px;padding:7px;border-radius:99px;
+  background:rgba(255,255,255,.62);
+  backdrop-filter:blur(32px) saturate(200%);-webkit-backdrop-filter:blur(32px) saturate(200%);
+  border:1px solid var(--lg-stroke);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.95), 0 14px 30px -12px rgba(14,22,38,.34);
+}
+.ios-tabbar b{
+  display:flex;flex-direction:column;align-items:center;gap:3px;width:62px;padding:6px 0;border-radius:99px;
+  font-size:9.5px;font-weight:560;color:var(--lg-ink2);cursor:pointer;transition:.28s var(--ease-spring);
+}
+.ios-tabbar b svg{width:19px;height:19px}
+.ios-tabbar b.on{color:var(--lg-blue);background:rgba(255,255,255,.88);box-shadow:0 2px 8px -2px rgba(14,22,38,.18)}
+
+/* iPad 专属：侧边栏 + 网格 */
+.pad-toolbar{
+  display:flex;align-items:center;gap:11px;padding:12px 18px;flex:none;
+  background:rgba(255,255,255,.42);
+  backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);
+  border-bottom:1px solid rgba(255,255,255,.6);position:relative;z-index:14;
+}
+.pad-toolbar .t{font-size:16.5px;font-weight:700;letter-spacing:-.4px;color:var(--lg-ink)}
+.pad-toolbar .s{font-size:11px;color:var(--lg-ink2);margin-top:1px}
+.pad-split{display:flex;flex:1;min-height:0;position:relative;z-index:10}
+.pad-side{
+  width:158px;flex:none;padding:14px 12px;display:flex;flex-direction:column;gap:5px;
+  background:rgba(255,255,255,.36);
+  backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);
+  border-right:1px solid rgba(255,255,255,.55);
+}
+.pad-side h4{font-size:10.5px;font-weight:660;letter-spacing:.7px;text-transform:uppercase;color:var(--lg-ink3);padding:4px 8px 7px}
+.pad-side b{
+  display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:11px;
+  font-size:12.5px;font-weight:540;color:var(--lg-ink);cursor:pointer;transition:.2s;
+}
+.pad-side b:hover{background:rgba(255,255,255,.6)}
+.pad-side b.on{background:#fff;box-shadow:0 3px 10px -4px rgba(14,22,38,.24)}
+.pad-side b i{width:9px;height:9px;border-radius:50%;flex:none}
+.pad-main{flex:1;min-width:0;padding:16px;overflow:hidden;display:flex;flex-direction:column;gap:12px}
+.pad-main h3{font-size:13px;font-weight:660;color:var(--lg-ink);letter-spacing:-.2px}
+.pad-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* ============================================================
+   内容卡片（可抓取载荷）
+   ============================================================ */
+.content-card{
+  position:relative;border-radius:15px;overflow:hidden;cursor:grab;
+  background:var(--panel-solid);
+  border:1px solid var(--hair);
+  box-shadow:0 2px 6px -2px rgba(14,22,38,.10), 0 10px 22px -14px rgba(14,22,38,.24);
+  transition:transform .3s var(--ease-spring), box-shadow .3s var(--ease-out), opacity .2s;
+  touch-action:none;user-select:none;
+}
+.content-card:hover{transform:translateY(-3px);box-shadow:0 8px 18px -6px rgba(14,22,38,.16), 0 22px 40px -22px rgba(14,22,38,.34)}
+.content-card:active{cursor:grabbing;transform:scale(.97)}
+.content-card.is-taken{opacity:.22;filter:grayscale(.4)}
+.content-card .cv{
+  height:86px;position:relative;display:grid;place-items:center;color:#fff;overflow:hidden;
+  font-size:26px;
+}
+.content-card .cv::after{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(160deg,rgba(255,255,255,.30),transparent 55%);
+}
+.content-card .cv svg{width:30px;height:30px;position:relative;z-index:2;filter:drop-shadow(0 2px 5px rgba(0,0,0,.28))}
+.content-card .cb{padding:9px 11px 10px}
+.content-card .cb b{display:block;font-size:12.3px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.content-card .cb s{display:block;text-decoration:none;font-size:10.5px;color:var(--ink-3);margin-top:3px;font-family:var(--font-mono)}
+.content-card.is-arriving{animation:arrive .58s var(--ease-spring)}
+@keyframes arrive{
+  0%{transform:scale(.5) translateY(26px);opacity:0}
+  60%{transform:scale(1.06) translateY(-3px);opacity:1}
+  100%{transform:scale(1) translateY(0)}
+}
+.cover-a{background:linear-gradient(140deg,#ff9d6c,#ff5f8f 52%,#a44bff)}
+.cover-b{background:linear-gradient(140deg,#4facfe,#3b6dff 58%,#5f3bff)}
+.cover-c{background:linear-gradient(140deg,#14d6a4,#12b3c8 55%,#3b8dff)}
+.cover-d{background:linear-gradient(140deg,#ffd166,#ff9f45 55%,#ff6b6b)}
+.cover-e{background:linear-gradient(140deg,#b18cff,#7a5cff 56%,#4a34ad)}
+.cover-f{background:linear-gradient(140deg,#5ee7df,#38b8e8 55%,#4a7cff)}
+
+/* Windows 网格内卡片尺寸压缩 */
+.win-grid .content-card .cv{height:96px}
+.dev-phone .content-card .cv{height:66px}
+.pad-grid .content-card .cv{height:90px}
+.m3-grid .content-card .cv{height:88px}
+.win-grid .content-card,.m3-grid .content-card{border-radius:13px}
+
+/* ---------- 玻璃行卡片（iOS / iPadOS 列表态） ---------- */
+.card-row{
+  position:relative;display:flex;align-items:center;gap:12px;padding:10px 12px;
+  border-radius:17px;cursor:grab;touch-action:none;user-select:none;overflow:hidden;
+  background:var(--lg-glass);
+  backdrop-filter:blur(26px) saturate(190%);-webkit-backdrop-filter:blur(26px) saturate(190%);
+  border:1px solid var(--lg-stroke);
+  box-shadow:
+    inset 0 1px 0 var(--lg-glass-hi),
+    inset 0 -1px 0 rgba(255,255,255,.30),
+    0 10px 24px -14px rgba(14,22,38,.32);
+  transition:transform .3s var(--ease-spring), box-shadow .3s var(--ease-out), opacity .2s;
+}
+.card-row:hover{transform:translateY(-2px);box-shadow:inset 0 1px 0 var(--lg-glass-hi), 0 16px 32px -14px rgba(14,22,38,.40)}
+.card-row:active{transform:scale(.975)}
+.card-row.is-taken{opacity:.2;filter:grayscale(.4)}
+.card-row.is-arriving{animation:arrive .58s var(--ease-spring)}
+.card-row .thumb{
+  width:47px;height:47px;border-radius:13px;flex:none;display:grid;place-items:center;
+  color:#fff;position:relative;overflow:hidden;
+  box-shadow:0 5px 12px -5px rgba(14,22,38,.36);
+}
+.card-row .thumb svg{width:22px;height:22px;position:relative;z-index:2;filter:drop-shadow(0 1px 3px rgba(0,0,0,.28))}
+.card-row .thumb::after{content:"";position:absolute;inset:0;background:linear-gradient(150deg,rgba(255,255,255,.34),transparent 58%)}
+.card-row .txt{flex:1;min-width:0}
+.card-row .txt b{display:block;font-size:13px;font-weight:620;color:var(--lg-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-row .txt s{display:block;text-decoration:none;font-size:10.8px;color:var(--lg-ink2);margin-top:3px;font-family:var(--font-mono)}
+.card-row .chev{flex:none;color:var(--lg-ink3);display:grid;place-items:center}
+.card-row .chev svg{width:13px;height:13px}
+
+/* 设备在线小徽标 */
+.badge-live{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;
+  font-size:10px;font-weight:600;letter-spacing:.2px;
+  background:rgba(25,195,125,.15);color:#0e8a58;flex:none;
+}
+.badge-live i{width:5px;height:5px;border-radius:50%;background:#19c37d}
+
+/* 状态栏图标统一着色 */
+.st-ico{display:flex;align-items:center;gap:5px;color:currentColor}
+.st-ico svg{display:block;fill:currentColor}
+
+/* ============================================================
+   悬浮抓取卡片（跟随指针）
+   ============================================================ */
+#ghost{
+  position:fixed;left:0;top:0;width:170px;z-index:9999;pointer-events:none;
+  border-radius:17px;overflow:hidden;background:#fff;
+  box-shadow:
+    0 28px 56px -14px rgba(14,22,38,.46),
+    0 0 0 1px rgba(255,255,255,.6),
+    0 0 0 4px rgba(59,109,255,.20);
+  opacity:0;transform:translate(-50%,-50%) scale(.5) rotate(-6deg);
+  transition:opacity .18s ease;
+}
+#ghost.on{opacity:1}
+#ghost .gv{height:96px;display:grid;place-items:center;color:#fff;position:relative}
+#ghost .gv svg{width:34px;height:34px;position:relative;z-index:2;filter:drop-shadow(0 3px 8px rgba(0,0,0,.3))}
+#ghost .gv::after{content:"";position:absolute;inset:0;background:linear-gradient(160deg,rgba(255,255,255,.34),transparent 55%)}
+#ghost .gb{padding:10px 13px 12px}
+#ghost .gb b{display:block;font-size:13px;font-weight:620;color:#0e1626;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ghost .gb s{display:block;text-decoration:none;font-size:10.5px;color:#8b96ab;margin-top:3px;font-family:var(--font-mono)}
+#ghost .halo{
+  position:absolute;inset:-1px;border-radius:inherit;pointer-events:none;
+  box-shadow:inset 0 0 22px rgba(59,109,255,.44);
+}
+
+/* ============================================================
+   投送成功提示
+   ============================================================ */
+#toast{
+  position:fixed;left:50%;bottom:34px;transform:translate(-50%,26px) scale(.94);
+  opacity:0;z-index:9998;pointer-events:none;
+  display:flex;align-items:center;gap:12px;padding:13px 20px 13px 15px;border-radius:17px;
+  background:rgba(17,23,38,.93);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  color:#fff;box-shadow:0 22px 48px -16px rgba(0,0,0,.6);
+  transition:.42s var(--ease-spring);
+}
+#toast.on{opacity:1;transform:translate(-50%,0) scale(1)}
+#toast .ti{
+  width:36px;height:36px;border-radius:11px;flex:none;display:grid;place-items:center;
+  background:linear-gradient(140deg,#19c37d,#0fa06a);
+}
+#toast .ti svg{width:18px;height:18px}
+#toast b{display:block;font-size:13.5px;font-weight:620}
+#toast s{display:block;text-decoration:none;font-size:11.5px;opacity:.72;margin-top:2px}
+
+/* ============================================================
+   手势状态 HUD
+   ============================================================ */
+#hud{
+  position:relative;flex:none;width:214px;
+  border-radius:18px;padding:15px 16px 14px;
+  background:rgba(255,255,255,.74);
+  backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);
+  border:1px solid rgba(255,255,255,.8);
+  box-shadow:0 1px 2px rgba(14,22,38,.06), 0 22px 46px -18px rgba(14,22,38,.36);
+  transition:.3s var(--ease-out);
+}
+#hud .h-top{display:flex;align-items:center;gap:11px}
+#hud .hand{
+  width:44px;height:44px;border-radius:14px;flex:none;display:grid;place-items:center;
+  background:linear-gradient(145deg,#eef2fb,#dde5f6);color:#3b6dff;
+  transition:.36s var(--ease-spring);
+}
+#hud .hand svg{width:24px;height:24px}
+#hud.grab .hand{background:linear-gradient(145deg,#3b6dff,#7a4bff);color:#fff;transform:scale(.93)}
+#hud.carry .hand{background:linear-gradient(145deg,#7a4bff,#b64bff);color:#fff;box-shadow:0 8px 18px -6px rgba(122,75,255,.7)}
+#hud.drop .hand{background:linear-gradient(145deg,#19c37d,#0fa06a);color:#fff}
+#hud .h-txt b{display:block;font-size:12.6px;font-weight:650;color:var(--ink);letter-spacing:-.1px}
+#hud .h-txt s{display:block;text-decoration:none;font-size:10.5px;color:var(--ink-3);margin-top:2px;font-family:var(--font-mono)}
+#hud .h-track{display:flex;gap:5px;margin-top:13px}
+#hud .h-track b{
+  flex:1;height:4px;border-radius:99px;background:rgba(14,22,38,.10);transition:.34s var(--ease-out);
+}
+#hud .h-track b.on{background:linear-gradient(90deg,#3b6dff,#7a4bff)}
+#hud .h-track b.done{background:#19c37d}
+#hud .h-note{
+  margin-top:11px;padding-top:10px;border-top:1px solid rgba(14,22,38,.07);
+  font-size:10.5px;color:var(--ink-3);font-family:var(--font-mono);display:flex;justify-content:space-between;
+}
+
+/* 底部操作提示 */
+/* 底部一行：状态面板 + 操作说明 */
+.footrow{
+  width:1200px;margin:44px auto 0;display:flex;gap:16px;align-items:center;
+}
+.guide{
+  flex:1;padding:18px 22px;border-radius:16px;
+  background:var(--panel);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border:1px solid rgba(255,255,255,.72);
+  box-shadow:0 1px 2px rgba(14,22,38,.05), 0 14px 32px -20px rgba(14,22,38,.30);
+  display:flex;flex-direction:column;align-items:flex-start;gap:11px;
+  font-size:12.3px;color:var(--ink-2);
+}
+.guide div{display:flex;align-items:center;gap:9px}
+.guide kbd{
+  font-family:var(--font-mono);font-size:10.5px;padding:2.5px 7px;border-radius:6px;
+  background:#fff;border:1px solid rgba(14,22,38,.12);border-bottom-width:2px;color:var(--ink);
+}
+.m3-pills{overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+.m3-pills::-webkit-scrollbar{display:none}
+</style>
+</head>
+<body>
+<!-- ========== 图标精灵 ========== -->
+<svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true"><defs>
+  <symbol id="i-hand" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0"/><path d="M14 10V4a2 2 0 0 0-4 0v2"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></g></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="13" rx="2.5"/><path d="M8 20.5h8M12 17.5v3"/></g></symbol>
+  <symbol id="i-broadcast" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 16.2a6 6 0 0 0 0-8.4M4.9 4.9a10 10 0 0 0 0 14.2M19.1 19.1a10 10 0 0 0 0-14.2"/></g></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.4V12l3.1 1.9"/></g></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.3"/><path d="M12 2.6v2.6M12 18.8v2.6M21.4 12h-2.6M5.2 12H2.6M18.6 5.4l-1.8 1.8M7.2 16.8l-1.8 1.8M18.6 18.6l-1.8-1.8M7.2 7.2 5.4 5.4"/></g></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.2" r="3.7"/><path d="M4.6 20a7.5 7.5 0 0 1 14.8 0"/></g></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-3.7-3.7"/></g></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5.4v13.2M5.4 12h13.2"/></g></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 11.6a8.4 8.4 0 1 1-2.5-6"/><path d="M20.6 4.4v5.2h-5.2"/></g></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m5.2 12.6 4.6 4.6L18.8 7.4"/></g></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.6"/><circle cx="8.6" cy="10" r="1.7"/><path d="m3.6 17.4 5.1-5.1 4.3 4.3 3.2-3.2 4.6 4.6"/></g></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.4H7.6a2 2 0 0 0-2 2v13.2a2 2 0 0 0 2 2h8.8a2 2 0 0 0 2-2V8.4z"/><path d="M14 3.4v5h4.4"/></g></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 13.4a3.6 3.6 0 0 0 5.1 0l3-3a3.6 3.6 0 0 0-5.1-5.1L12.4 6.5"/><path d="M13.4 10.6a3.6 3.6 0 0 0-5.1 0l-3 3a3.6 3.6 0 0 0 5.1 5.1l1.2-1.2"/></g></symbol>
+  <symbol id="i-text" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 6.6h14M5 12h14M5 17.4h8"/></g></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2.6" y="5.6" width="13.8" height="12.8" rx="2.6"/><path d="m16.4 12 4.9-3v6z"/></g></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9.2 18V5.6l10-2v12.2"/><circle cx="6.6" cy="18" r="2.6"/><circle cx="16.6" cy="15.8" r="2.6"/></g></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="6.6" y="2.6" width="10.8" height="18.8" rx="3"/><path d="M10.6 18.6h2.8"/></g></symbol>
+  <symbol id="i-tablet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2.6" width="16" height="18.8" rx="2.6"/><path d="M11 18.8h2"/></g></symbol>
+  <symbol id="i-laptop" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.6" y="4.6" width="16.8" height="11.4" rx="2"/><path d="M1.8 19.4h20.4"/></g></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></g></symbol>
+  <symbol id="i-arrow-down" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.6v14.8M6.4 13.6 12 19.4l5.6-5.8"/></g></symbol>
+  <symbol id="i-signal" viewBox="0 0 18 12"><g fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="4.6" y="5.4" width="3" height="6.6" rx="1"/><rect x="9.2" y="2.8" width="3" height="9.2" rx="1"/><rect x="13.8" y="0.4" width="3" height="11.6" rx="1"/></g></symbol>
+  <symbol id="i-wifi" viewBox="0 0 16 12"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M1.4 4.2a10 10 0 0 1 13.2 0"/><path d="M3.8 6.9a6.6 6.6 0 0 1 8.4 0"/><path d="M6.3 9.5a3.2 3.2 0 0 1 3.4 0"/></g></symbol>
+  <symbol id="i-battery" viewBox="0 0 26 12"><g><rect x="0.6" y="0.6" width="21" height="10.8" rx="3.2" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".38"/><rect x="2.2" y="2.2" width="15.4" height="7.6" rx="1.9" fill="currentColor"/><path d="M23.2 4.1v3.8a2 2 0 0 0 0-3.8z" fill="currentColor" opacity=".38"/></g></symbol>
+</defs></svg>
+
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark"><svg><use href="#i-hand"/></svg></div>
+      <div class="brand-text">
+        <h1>AirGrab</h1>
+        <p>隔空手势抓取投送 · 四端 UI 高保真原型</p>
+      </div>
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="chip"><span class="dot live"></span>局域网 <b>4 台设备在线</b></div>
+    <div class="chip"><span class="dot warn" id="camDot"></span>手势通道 <b id="chanTxt">模拟输入</b><button id="chanBtn">切换</button></div>
+  </div>
+
+  <div class="stage">
+
+    <!-- ======================= Windows 11 / WinUI 3 ======================= -->
+    <div class="device dev-windows" data-device="windows" data-label="Windows 11 · 笔记本">
+      <div class="drop-hint"><svg><use href="#i-arrow-down"/></svg>松手投送到 Windows</div>
+      <div class="screen">
+        <!-- 自绘标题栏 -->
+        <div class="win-titlebar">
+          <div class="win-tb-left">
+            <svg class="win-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0"/><path d="M14 10V4a2 2 0 0 0-4 0v2"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+            <span>AirGrab</span>
+            <i></i>
+            <em>设备</em>
+          </div>
+          <div class="win-caption">
+            <button title="最小化"><svg viewBox="0 0 12 12"><path d="M1.4 6h9.2" stroke="currentColor" stroke-width="1.1"/></svg></button>
+            <button title="最大化"><svg viewBox="0 0 12 12"><rect x="1.4" y="1.4" width="9.2" height="9.2" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.1"/></svg></button>
+            <button class="close" title="关闭"><svg viewBox="0 0 12 12"><path d="M1.7 1.7 10.3 10.3M10.3 1.7 1.7 10.3" stroke="currentColor" stroke-width="1.1"/></svg></button>
+          </div>
+        </div>
+        <div class="win-body">
+          <div class="win-rail">
+            <b class="on"><svg><use href="#i-monitor"/></svg></b>
+            <b><svg><use href="#i-hand"/></svg></b>
+            <b><svg><use href="#i-clock"/></svg></b>
+            <b><svg><use href="#i-gear"/></svg></b>
+          </div>
+          <div class="win-main">
+            <div class="win-head">
+              <div>
+                <h2>附近设备</h2>
+                <p>已发现 3 台可接收设备 · 局域网往返 8 ms</p>
+              </div>
+              <div class="win-search"><svg><use href="#i-search"/></svg>搜索设备或内容</div>
+            </div>
+            <div class="peer-row">
+              <div class="peer">
+                <div class="peer-ico" style="background:linear-gradient(140deg,#4ade80,#15a34a)"><svg><use href="#i-phone"/></svg></div>
+                <div class="peer-meta"><b>Pixel 9 Pro</b><s>Android 16 · 可接收</s></div>
+                <div class="bars q4"><i></i><i></i><i></i><i></i></div>
+              </div>
+              <div class="peer">
+                <div class="peer-ico" style="background:linear-gradient(140deg,#9aa6bd,#5b6780)"><svg><use href="#i-phone"/></svg></div>
+                <div class="peer-meta"><b>iPhone 17 Pro</b><s>iOS 26 · 可接收</s></div>
+                <div class="bars q3"><i></i><i></i><i></i><i></i></div>
+              </div>
+              <div class="peer">
+                <div class="peer-ico" style="background:linear-gradient(140deg,#5ab0ff,#2f6bff)"><svg><use href="#i-tablet"/></svg></div>
+                <div class="peer-meta"><b>iPad Pro 13"</b><s>iPadOS 26 · 可接收</s></div>
+                <div class="bars q4"><i></i><i></i><i></i><i></i></div>
+              </div>
+            </div>
+            <div class="win-sec-title">最近投送 <s></s> 4 项</div>
+            <div class="win-grid">
+              <div class="content-card" data-type="image" data-name="产品渲染图.png" data-meta="2.4 MB" data-cover="cover-b" data-icon="i-image">
+                <div class="cv cover-b"><svg><use href="#i-image"/></svg></div>
+                <div class="cb"><b>产品渲染图.png</b><s>2.4 MB</s></div>
+              </div>
+              <div class="content-card" data-type="file" data-name="Q3 财报.pdf" data-meta="865 KB" data-cover="cover-d" data-icon="i-doc">
+                <div class="cv cover-d"><svg><use href="#i-doc"/></svg></div>
+                <div class="cb"><b>Q3 财报.pdf</b><s>865 KB</s></div>
+              </div>
+              <div class="content-card" data-type="text" data-name="会议纪要（文本）" data-meta="1.2 KB" data-cover="cover-c" data-icon="i-text">
+                <div class="cv cover-c"><svg><use href="#i-text"/></svg></div>
+                <div class="cb"><b>会议纪要（文本）</b><s>1.2 KB</s></div>
+              </div>
+              <div class="content-card" data-type="file" data-name="演示视频.mp4" data-meta="18.7 MB" data-cover="cover-e" data-icon="i-video">
+                <div class="cv cover-e"><svg><use href="#i-video"/></svg></div>
+                <div class="cb"><b>演示视频.mp4</b><s>18.7 MB</s></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================= 移动三端 ======================= -->
+    <div style="display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap;justify-content:center">
+
+      <!-- ---------- iPadOS 26 / Liquid Glass ---------- -->
+      <div class="device dev-tablet" data-device="ipados" data-label="iPad Pro · iPadOS 26">
+        <div class="drop-hint"><svg><use href="#i-arrow-down"/></svg>松手投送到 iPad</div>
+        <div class="screen">
+          <div class="lg-wall"></div>
+          <div class="lg-screen tablet-screen">
+            <div class="pad-toolbar">
+              <div style="width:29px;height:29px;border-radius:9px;background:linear-gradient(150deg,#3b6dff,#7a4bff);display:grid;place-items:center;color:#fff;flex:none">
+                <svg style="width:16px;height:16px"><use href="#i-hand"/></svg>
+              </div>
+              <div style="flex:1;min-width:0"><div class="t">AirGrab</div><div class="s">iPadOS 26 · 隔空投送已就绪</div></div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span class="badge-live"><i></i>可接收</span>
+              </div>
+            </div>
+            <div class="pad-split">
+              <div class="pad-side">
+                <h4>附近设备</h4>
+                <b class="on"><i style="background:#8b93a6"></i>本机 · iPad Pro</b>
+                <b><i style="background:#4ade80"></i>Pixel 9 Pro</b>
+                <b><i style="background:#5ab0ff"></i>Windows 笔记本</b>
+                <b><i style="background:#9aa6bd"></i>iPhone 17 Pro</b>
+                <h4 style="padding-top:14px">投送记录</h4>
+                <b><i style="background:#f0a020"></i>今天 · 6 项</b>
+                <b><i style="background:#a78bfa"></i>昨天 · 14 项</b>
+              </div>
+              <div class="pad-main">
+                <h3>最近接收</h3>
+                <div class="pad-grid">
+                  <div class="content-card" data-type="file" data-name="分镜表.xlsx" data-meta="156 KB" data-cover="cover-c" data-icon="i-doc">
+                    <div class="cv cover-c"><svg><use href="#i-doc"/></svg></div>
+                    <div class="cb"><b>分镜表.xlsx</b><s>156 KB</s></div>
+                  </div>
+                  <div class="content-card" data-type="image" data-name="概念图.png" data-meta="5.6 MB" data-cover="cover-b" data-icon="i-image">
+                    <div class="cv cover-b"><svg><use href="#i-image"/></svg></div>
+                    <div class="cb"><b>概念图.png</b><s>5.6 MB</s></div>
+                  </div>
+                  <div class="content-card" data-type="text" data-name="客户反馈.txt" data-meta="3.4 KB" data-cover="cover-d" data-icon="i-text">
+                    <div class="cv cover-d"><svg><use href="#i-text"/></svg></div>
+                    <div class="cb"><b>客户反馈.txt</b><s>3.4 KB</s></div>
+                  </div>
+                  <div class="content-card" data-type="file" data-name="演示片.mov" data-meta="44 MB" data-cover="cover-e" data-icon="i-video">
+                    <div class="cv cover-e"><svg><use href="#i-video"/></svg></div>
+                    <div class="cb"><b>演示片.mov</b><s>44 MB</s></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="ios-tabwrap">
+              <div class="ios-tabbar">
+                <b class="on"><svg><use href="#i-hand"/></svg>投送</b>
+                <b><svg><use href="#i-broadcast"/></svg>设备</b>
+                <b><svg><use href="#i-clock"/></svg>记录</b>
+                <b><svg><use href="#i-gear"/></svg>设置</b>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------- Android 16 / Material 3 Expressive ---------- -->
+      <div class="device dev-phone dev-android" data-device="android" data-label="Pixel 9 Pro · Android 16">
+        <div class="drop-hint"><svg><use href="#i-arrow-down"/></svg>松手投送到 Pixel</div>
+        <div class="screen">
+          <div class="notch"></div>
+          <div class="m3-screen">
+            <div class="m3-status">
+              <span>9:41</span>
+              <span class="r">
+                <svg viewBox="0 0 18 12" style="width:15px;height:10px"><use href="#i-signal"/></svg>
+                <svg viewBox="0 0 16 12" style="width:13px;height:10px"><use href="#i-wifi"/></svg>
+                <svg viewBox="0 0 26 12" style="width:22px;height:10px"><use href="#i-battery"/></svg>
+              </span>
+            </div>
+            <div class="m3-bar">
+              <h2>AirGrab</h2>
+              <p>握拳抓取 · 张开投送</p>
+            </div>
+            <div class="m3-pills">
+              <div class="m3-pill on"><i></i>Pixel 9 Pro</div>
+              <div class="m3-pill">iPhone 17</div>
+              <div class="m3-pill">Windows</div>
+            </div>
+            <div class="m3-grid">
+              <div class="content-card" data-type="image" data-name="IMG_2481.HEIC" data-meta="3.1 MB" data-cover="cover-a" data-icon="i-image">
+                <div class="cv cover-a"><svg><use href="#i-image"/></svg></div>
+                <div class="cb"><b>IMG_2481.HEIC</b><s>3.1 MB</s></div>
+              </div>
+              <div class="content-card" data-type="link" data-name="抓取的链接" data-meta="url" data-cover="cover-f" data-icon="i-link">
+                <div class="cv cover-f"><svg><use href="#i-link"/></svg></div>
+                <div class="cb"><b>抓取的链接</b><s>url</s></div>
+              </div>
+              <div class="content-card" data-type="file" data-name="设计稿.fig" data-meta="12.4 MB" data-cover="cover-e" data-icon="i-doc">
+                <div class="cv cover-e"><svg><use href="#i-doc"/></svg></div>
+                <div class="cb"><b>设计稿.fig</b><s>12.4 MB</s></div>
+              </div>
+              <div class="content-card" data-type="file" data-name="语音备忘.m4a" data-meta="742 KB" data-cover="cover-c" data-icon="i-music">
+                <div class="cv cover-c"><svg><use href="#i-music"/></svg></div>
+                <div class="cb"><b>语音备忘.m4a</b><s>742 KB</s></div>
+              </div>
+            </div>
+            <div class="m3-fab"><svg><use href="#i-hand"/></svg></div>
+            <div class="m3-nav">
+              <b class="on"><i><svg><use href="#i-hand"/></svg></i>投送</b>
+              <b><i><svg><use href="#i-broadcast"/></svg></i>设备</b>
+              <b><i><svg><use href="#i-clock"/></svg></i>记录</b>
+              <b><i><svg><use href="#i-gear"/></svg></i>设置</b>
+            </div>
+          </div>
+          <div class="home-bar"></div>
+        </div>
+      </div>
+
+      <!-- ---------- iOS 26 / Liquid Glass ---------- -->
+      <div class="device dev-phone dev-ios" data-device="ios" data-label="iPhone 17 Pro · iOS 26">
+        <div class="drop-hint"><svg><use href="#i-arrow-down"/></svg>松手投送到 iPhone</div>
+        <div class="screen">
+          <div class="lg-wall"></div>
+          <div class="notch"><i></i></div>
+          <div class="lg-screen">
+            <div class="ios-status">
+              <span>9:41</span>
+              <span class="r">
+                <svg viewBox="0 0 18 12" style="width:15px;height:10px"><use href="#i-signal"/></svg>
+                <svg viewBox="0 0 16 12" style="width:13px;height:10px"><use href="#i-wifi"/></svg>
+                <svg viewBox="0 0 26 12" style="width:22px;height:10px"><use href="#i-battery"/></svg>
+              </span>
+            </div>
+            <div class="ios-head">
+              <h2>投送</h2>
+              <p>4 台设备在附近 · 隔空手势已开启</p>
+            </div>
+            <div class="ios-list">
+              <div class="card-row glass" style="cursor:default">
+                <div class="thumb" style="background:linear-gradient(140deg,#3b6dff,#7a4bff)"><svg><use href="#i-broadcast"/></svg></div>
+                <div class="txt"><b>可接收状态已开启</b><s>3 台设备 · 延迟 8 ms</s></div>
+                <span class="badge-live"><i></i>在线</span>
+              </div>
+              <div class="card-row" data-type="image" data-name="相册精选.jpg" data-meta="4.8 MB" data-cover="cover-a" data-icon="i-image">
+                <div class="thumb cover-a"><svg><use href="#i-image"/></svg></div>
+                <div class="txt"><b>相册精选.jpg</b><s>4.8 MB</s></div>
+                <span class="chev"><svg><use href="#i-chev"/></svg></span>
+              </div>
+              <div class="card-row" data-type="file" data-name="AirGrab 文档" data-meta="204 KB" data-cover="cover-b" data-icon="i-doc">
+                <div class="thumb cover-b"><svg><use href="#i-doc"/></svg></div>
+                <div class="txt"><b>AirGrab 文档</b><s>204 KB</s></div>
+                <span class="chev"><svg><use href="#i-chev"/></svg></span>
+              </div>
+              <div class="card-row" data-type="link" data-name="灵感链接" data-meta="url" data-cover="cover-f" data-icon="i-link">
+                <div class="thumb cover-f"><svg><use href="#i-link"/></svg></div>
+                <div class="txt"><b>灵感链接</b><s>url</s></div>
+                <span class="chev"><svg><use href="#i-chev"/></svg></span>
+              </div>
+              <div class="card-row" data-type="image" data-name="截图 2026-10-16.png" data-meta="1.1 MB" data-cover="cover-d" data-icon="i-image">
+                <div class="thumb cover-d"><svg><use href="#i-image"/></svg></div>
+                <div class="txt"><b>截图 2026-10-16.png</b><s>1.1 MB</s></div>
+                <span class="chev"><svg><use href="#i-chev"/></svg></span>
+              </div>
+            </div>
+            <div class="ios-tabwrap">
+              <div class="ios-tabbar">
+                <b class="on"><svg><use href="#i-hand"/></svg>投送</b>
+                <b><svg><use href="#i-broadcast"/></svg>设备</b>
+                <b><svg><use href="#i-clock"/></svg>记录</b>
+                <b><svg><use href="#i-gear"/></svg>设置</b>
+              </div>
+            </div>
+          </div>
+          <div class="home-bar"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="footrow">
+    <div id="hud">
+      <div class="h-top">
+        <div class="hand"><svg><use href="#i-hand"/></svg></div>
+        <div class="h-txt"><b id="hudName">待机</b><s id="hudCode">IDLE</s></div>
+      </div>
+      <div class="h-track"><b class="on"></b><b></b><b></b><b></b></div>
+      <div class="h-note"><span id="hudHint">等待手势</span><span id="hudPayload">—</span></div>
+    </div>
+    <div class="guide">
+      <div><kbd>按住卡片</kbd> 握拳抓取（停顿 0.5s）</div>
+      <div><kbd>拖到另一台设备</kbd> 搬运，目标设备高亮</div>
+      <div><kbd>松开</kbd> 张开手掌投送</div>
+      <div><kbd>拖回原处</kbd> 取消本次抓取</div>
+    </div>
+  </div>
+</div>
+
+<!-- 悬浮抓取卡片 -->
+<div id="ghost">
+  <div class="gv" id="ghostCover"></div>
+  <div class="gb"><b id="ghostName"></b><s id="ghostMeta"></s></div>
+  <div class="halo"></div>
+</div>
+
+<!-- 投送成功提示 -->
+<div id="toast">
+  <div class="ti"><svg><use href="#i-check"/></svg></div>
+  <div><b id="toastTitle"></b><s id="toastSub"></s></div>
+</div>
+
+<script>
+/* =============================================================
+   AirGrab 原型交互：手势状态机 + 跨设备抓取投送
+   手势层与传输层在此原型中由指针事件代为驱动；
+   真实实现中该输入源替换为 21 关键点手部检测结果。
+   ============================================================= */
+(function(){
+  'use strict';
+
+  var ghost        = document.getElementById('ghost');
+  var ghostCover   = document.getElementById('ghostCover');
+  var ghostName    = document.getElementById('ghostName');
+  var ghostMeta    = document.getElementById('ghostMeta');
+  var hud          = document.getElementById('hud');
+  var hudName      = document.getElementById('hudName');
+  var hudCode      = document.getElementById('hudCode');
+  var hudHint      = document.getElementById('hudHint');
+  var hudPayload   = document.getElementById('hudPayload');
+  var toast        = document.getElementById('toast');
+  var toastTitle   = document.getElementById('toastTitle');
+  var toastSub     = document.getElementById('toastSub');
+  var chanBtn      = document.getElementById('chanBtn');
+  var chanTxt      = document.getElementById('chanTxt');
+  var camDot       = document.getElementById('camDot');
+  var devices      = Array.prototype.slice.call(document.querySelectorAll('.device'));
+
+  var STAGES = [
+    { n:'待机', c:'IDLE',     h:'等待手势' },
+    { n:'悬停', c:'HOVER',    h:'手掌已识别' },
+    { n:'抓取', c:'GRABBING', h:'握拳确认 0.5s' },
+    { n:'搬运', c:'CARRYING', h:'移向目标设备' },
+    { n:'投送', c:'DROP',     h:'张开手掌释放' }
+  ];
+
+  var stage = 0, drag = null, toastTimer = null, carryTimer = null, backTimer = null;
+
+  /* ---------- 状态机 ---------- */
+  function setStage(i, payload){
+    stage = i;
+    var s = STAGES[i] || STAGES[0];
+    hudName.textContent = s.n;
+    hudCode.textContent = s.c;
+    hudHint.textContent = s.h;
+    hud.classList.remove('grab','carry','drop');
+    if(i === 2) hud.classList.add('grab');
+    else if(i === 3) hud.classList.add('carry');
+    else if(i === 4) hud.classList.add('drop');
+
+    var bars = hud.querySelectorAll('.h-track b');
+    for(var k = 0; k < bars.length; k++){
+      bars[k].classList.remove('on','done');
+      if(k < i - 1) bars[k].classList.add('done');
+      else if(k === i - 1) bars[k].classList.add('on');
+    }
+    if(payload) hudPayload.textContent = payload;
+  }
+
+  function resetStage(delay){
+    clearTimeout(backTimer);
+    backTimer = setTimeout(function(){
+      setStage(0);
+      hudPayload.textContent = '—';
+    }, delay || 0);
+  }
+
+  /* ---------- 提示条 ---------- */
+  function showToast(title, sub){
+    toastTitle.textContent = title;
+    toastSub.textContent = sub;
+    toast.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toast.classList.remove('on'); }, 2600);
+  }
+
+  /* ---------- 几何命中 ---------- */
+  function screenRect(d){ return d.querySelector('.screen').getBoundingClientRect(); }
+
+  function hitDevice(x, y){
+    for(var i = 0; i < devices.length; i++){
+      var d = devices[i];
+      if(drag && d === drag.source) continue;
+      var r = screenRect(d);
+      if(x >= r.left - 6 && x <= r.right + 6 && y >= r.top - 34 && y <= r.bottom + 6) return d;
+    }
+    return null;
+  }
+
+  function setTarget(d){
+    if(drag.target === d) return;
+    drag.target = d;
+    devices.forEach(function(x){
+      x.classList.toggle('is-target', x === d);
+      x.classList.toggle('is-locked', !!d && x !== d && x !== drag.source);
+    });
+  }
+
+  function clearMarks(){
+    devices.forEach(function(x){ x.classList.remove('is-target','is-locked'); });
+  }
+
+  /* ---------- 载荷写入 ---------- */
+  function esc(s){
+    return String(s).replace(/[&<>"]/g, function(c){
+      return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' })[c];
+    });
+  }
+
+  function payloadOf(el){
+    return {
+      type:  el.dataset.type,
+      name:  el.dataset.name,
+      meta:  el.dataset.meta,
+      cover: el.dataset.cover,
+      icon:  el.dataset.icon
+    };
+  }
+
+  function makeGridCard(p){
+    var el = document.createElement('div');
+    el.className = 'content-card is-arriving';
+    el.setAttribute('data-type',  p.type);
+    el.setAttribute('data-name',  p.name);
+    el.setAttribute('data-meta',  p.meta);
+    el.setAttribute('data-cover', p.cover);
+    el.setAttribute('data-icon',  p.icon);
+    el.innerHTML =
+      '<div class="cv ' + p.cover + '"><svg><use href="#' + p.icon + '"/></svg></div>' +
+      '<div class="cb"><b>' + esc(p.name) + '</b><s>' + esc(p.meta) + '</s></div>';
+    return el;
+  }
+
+  function makeRowCard(p){
+    var el = document.createElement('div');
+    el.className = 'card-row is-arriving';
+    el.setAttribute('data-type',  p.type);
+    el.setAttribute('data-name',  p.name);
+    el.setAttribute('data-meta',  p.meta);
+    el.setAttribute('data-cover', p.cover);
+    el.setAttribute('data-icon',  p.icon);
+    el.innerHTML =
+      '<div class="thumb ' + p.cover + '"><svg><use href="#' + p.icon + '"/></svg></div>' +
+      '<div class="txt"><b>' + esc(p.name) + '</b><s>' + esc(p.meta) + '</s></div>' +
+      '<span class="chev"><svg><use href="#i-chev"/></svg></span>';
+    return el;
+  }
+
+  function postDrop(target, src, p){
+    var grid = target.querySelector('.win-grid, .m3-grid, .pad-grid');
+    var list = target.querySelector('.ios-list');
+    var el = null;
+
+    if(grid){
+      el = makeGridCard(p);
+      grid.insertBefore(el, grid.firstChild);
+    } else if(list){
+      el = makeRowCard(p);
+      list.insertBefore(el, list.children[1] || null);
+    }
+    if(el){
+      bindCard(el);
+      setTimeout(function(){ el.classList.remove('is-arriving'); }, 620);
+    }
+    setTimeout(function(){ src.classList.remove('is-taken'); }, 260);
+    showToast(p.name, '已由 ' + dragLabel(src) + ' 投送至 ' + target.dataset.label);
+  }
+
+  function dragLabel(src){
+    var d = src.closest('.device');
+    return d ? d.dataset.label.split('·')[0].trim() : '本机';
+  }
+
+  /* ---------- 抓取流程 ---------- */
+  function onMove(e){
+    if(!drag) return;
+    ghost.style.transform =
+      'translate(' + e.clientX + 'px,' + e.clientY + 'px) translate(-50%,-50%) scale(1) rotate(-5deg)';
+    setTarget(hitDevice(e.clientX, e.clientY));
+  }
+
+  function onUp(){
+    if(!drag) return;
+    var d = drag;
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    clearTimeout(carryTimer);
+
+    if(d.target){
+      var r = screenRect(d.target);
+      ghost.style.transition = 'transform .44s cubic-bezier(.4,0,.2,1), opacity .44s ease';
+      ghost.style.transform =
+        'translate(' + (r.left + r.width / 2) + 'px,' + (r.top + r.height * 0.4) +
+        'px) translate(-50%,-50%) scale(.22) rotate(7deg)';
+      ghost.style.opacity = '0';
+      setStage(4, d.p.name);
+      var tgt = d.target;
+      setTimeout(function(){ postDrop(tgt, d.card, d.p); }, 420);
+      resetStage(1700);
+    } else {
+      ghost.style.transition = 'transform .36s cubic-bezier(.3,0,.2,1), opacity .26s ease';
+      ghost.style.transform =
+        'translate(' + d.origin.x + 'px,' + d.origin.y + 'px) translate(-50%,-50%) scale(.4) rotate(0deg)';
+      ghost.style.opacity = '0';
+      setTimeout(function(){ d.card.classList.remove('is-taken'); }, 300);
+      resetStage(360);
+    }
+
+    drag = null;
+    clearMarks();
+    setTimeout(function(){
+      ghost.classList.remove('on');
+      ghost.style.transition = '';
+      ghost.style.transform = '';
+      ghost.style.opacity = '';
+    }, 480);
+  }
+
+  function startDrag(card, e){
+    var r = card.getBoundingClientRect();
+    drag = {
+      card:   card,
+      source: card.closest('.device'),
+      p:      payloadOf(card),
+      origin: { x: r.left + r.width / 2, y: r.top + r.height / 2 },
+      target: null
+    };
+
+    card.classList.add('is-taken');
+    ghostCover.className = 'gv ' + drag.p.cover;
+    ghostCover.innerHTML = '<svg><use href="#' + drag.p.icon + '"/></svg>';
+    ghostName.textContent = drag.p.name;
+    ghostMeta.textContent = drag.p.meta;
+
+    ghost.style.transition = 'opacity .16s ease, transform .32s cubic-bezier(.22,1.4,.36,1)';
+    ghost.style.transform =
+      'translate(' + e.clientX + 'px,' + e.clientY + 'px) translate(-50%,-50%) scale(.24) rotate(-17deg)';
+    ghost.classList.add('on');
+    requestAnimationFrame(function(){
+      ghost.style.transform =
+        'translate(' + e.clientX + 'px,' + e.clientY + 'px) translate(-50%,-50%) scale(1) rotate(-5deg)';
+    });
+    setTimeout(function(){ if(drag) ghost.style.transition = 'opacity .16s ease'; }, 340);
+
+    setStage(2, drag.p.name);
+    carryTimer = setTimeout(function(){
+      if(drag) setStage(3, drag.p.name);
+    }, 260);
+  }
+
+  function bindCard(el){
+    el.addEventListener('pointerdown', function(e){
+      if(e.pointerType === 'mouse' && e.button !== 0) return;
+      e.preventDefault();
+      startDrag(el, e);
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+    });
+    el.addEventListener('mouseenter', function(){ if(!drag && stage === 0) setStage(1); });
+    el.addEventListener('mouseleave', function(){ if(!drag && stage === 1) setStage(0); });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-type]'), bindCard);
+
+  /* ---------- 手势通道切换（模拟输入 / 摄像头识别） ---------- */
+  var realCam = false;
+  chanBtn.addEventListener('click', function(e){
+    e.stopPropagation();
+    realCam = !realCam;
+    chanTxt.textContent = realCam ? '摄像头识别' : '模拟输入';
+    camDot.className = 'dot ' + (realCam ? 'live' : 'warn');
+    showToast(
+      realCam ? '已切换至摄像头手势通道' : '已切换至模拟输入通道',
+      realCam ? '手部 21 关键点 · 端侧推理 · 约 12 ms'
+              : '指针事件驱动状态机 · 用于无摄像头环境演示'
+    );
+  });
+
+  setStage(0);
+  hudPayload.textContent = '—';
+})();
+</script>
+</body>
+</html>

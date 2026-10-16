@@ -1,0 +1,35 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Xcode / XcodeGen
+ios/AirGrab.xcodeproj/
+ios/*.xcworkspace/
+ios/build-sim/
+ios/build-dev/
+ios/dist/
+ios/ipa/
+xcuserdata/
+DerivedData/
+*.xcuserstate
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+
+# 构建产物
+dist/
+build/
+
+# 临时目录（构建脚本、自测夹具、截图预览）
+.workbuddy/
+
+# 系统
+.DS_Store
+Thumbs.db

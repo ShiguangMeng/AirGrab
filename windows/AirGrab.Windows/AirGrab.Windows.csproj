@@ -7,6 +7,8 @@
     <RootNamespace>AirGrab</RootNamespace>
     <AssemblyName>AirGrab</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- 嵌入 exe 图标：任务栏、开始菜单、文件资源管理器与托盘都取这一个 -->
+    <ApplicationIcon>Assets\AirGrab.ico</ApplicationIcon>
     <Platforms>x64;ARM64</Platforms>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <UseWinUI>true</UseWinUI>

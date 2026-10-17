@@ -45,6 +45,7 @@ internal sealed class TrayIcon : IDisposable
     private readonly IntPtr _hwnd;
     private readonly uint _iconId;
     private readonly SUBCLASSPROC _subclassProc;
+    private readonly IntPtr _hIcon;
 
     private bool _installed;
     private bool _disposed;
@@ -61,6 +62,36 @@ internal sealed class TrayIcon : IDisposable
         _iconId = 1;
         // 委托必须由字段持有，否则会被 GC 回收，回调时直接崩。
         _subclassProc = OnSubclassMessage;
+        // 图标只取一次并缓存：每次 Shell_NotifyIcon 都重新 LoadIcon 会持续泄漏句柄。
+        _hIcon = LoadAppIcon();
+    }
+
+    /// <summary>
+    /// 取 exe 自身嵌入的应用图标，与任务栏 / 开始菜单保持一致。
+    /// 取不到时退回系统默认图标，避免托盘出现空白项。
+    /// </summary>
+    private static IntPtr LoadAppIcon()
+    {
+        string? processPath = Environment.ProcessPath;
+
+        if (!string.IsNullOrEmpty(processPath))
+        {
+            var large = new IntPtr[1];
+            var small = new IntPtr[1];
+
+            if (ExtractIconExW(processPath, 0, large, small, 1) > 0)
+            {
+                if (small[0] != IntPtr.Zero)
+                {
+                    if (large[0] != IntPtr.Zero) DestroyIcon(large[0]);
+                    return small[0];
+                }
+
+                if (large[0] != IntPtr.Zero) return large[0];
+            }
+        }
+
+        return LoadIconW(IntPtr.Zero, (IntPtr)IDI_APPLICATION);
     }
 
     public void Install(string tooltip)
@@ -87,7 +118,7 @@ internal sealed class TrayIcon : IDisposable
         uID = _iconId,
         uFlags = flags,
         uCallbackMessage = WM_TRAYICON,
-        hIcon = LoadIconW(IntPtr.Zero, (IntPtr)IDI_APPLICATION),
+        hIcon = _hIcon,
         szTip = tooltip,
         szInfo = string.Empty,
         szInfoTitle = string.Empty
@@ -185,6 +216,11 @@ internal sealed class TrayIcon : IDisposable
             RemoveWindowSubclass(_hwnd, _subclassProc, (UIntPtr)_iconId);
             _installed = false;
         }
+
+        if (_hIcon != IntPtr.Zero)
+        {
+            DestroyIcon(_hIcon);
+        }
     }
 
     // ---------------------------------------------------------------- interop
@@ -244,6 +280,13 @@ internal sealed class TrayIcon : IDisposable
 
     [DllImport("user32.dll")]
     private static extern IntPtr LoadIconW(IntPtr hInstance, IntPtr lpIconName);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint ExtractIconExW(string lpszFile, int nIconIndex,
+        IntPtr[] phiconLarge, IntPtr[] phiconSmall, uint nIcons);
+
+    [DllImport("user32.dll")]
+    private static extern bool DestroyIcon(IntPtr hIcon);
 
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);

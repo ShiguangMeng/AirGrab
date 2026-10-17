@@ -28,6 +28,8 @@ import com.shiguangmeng.airgrab.R
  */
 class CameraForegroundService : Service() {
 
+    private val silence = SilenceKeepAlive()
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -44,8 +46,16 @@ class CameraForegroundService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
+        // 双保险：前台服务维持进程优先级，静音音频再挡住部分厂商 ROM 的额外冻结策略。
+        silence.start()
+
         // 被系统回收后自动重建，避免用户切回应用时才发现采集已停。
         return START_STICKY
+    }
+
+    override fun onDestroy() {
+        silence.stop()
+        super.onDestroy()
     }
 
     private fun ensureChannel() {

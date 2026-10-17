@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Graphics;
+using WinRT.Interop;
 
 namespace AirGrab;
 
@@ -35,6 +36,7 @@ public sealed partial class MainWindow : Window
         Model.PropertyChanged += (_, _) => SyncUi();
 
         // 摄像头预览帧：由检测器在 UI 线程派发，这里直接换成可绑定的位图源。
+        // 订阅回调是 async void —— 异常必须在这里就地捕获，否则会逃逸到线程池。
         Model.Detector.PreviewFrame += async bitmap =>
         {
             try
@@ -42,6 +44,10 @@ public sealed partial class MainWindow : Window
                 var source = new SoftwareBitmapSource();
                 await source.SetBitmapAsync(bitmap);
                 CameraPreviewImage.Source = source;
+            }
+            catch
+            {
+                // 预览渲染失败时保留上一帧，不打断手势识别。
             }
             finally
             {
@@ -51,7 +57,49 @@ public sealed partial class MainWindow : Window
 
         UpdateChannelUi();
 
-        Closed += (_, _) => Model.Dispose();
+        ConfigureTray();
+
+        Closed += (_, _) =>
+        {
+            _tray?.Dispose();
+            Model.Dispose();
+        };
+    }
+
+    private TrayIcon? _tray;
+    private bool _allowClose;
+
+    /// <summary>
+    /// 托盘常驻：点关闭按钮不退出进程，只把窗口藏进通知区域。
+    ///
+    /// 设备发现、接收服务、摄像头采集都挂在进程上 —— 一旦关闭就退出，
+    /// 一次误点就会让整条投送链路直接断掉。因此把「关闭」重新定义为「最小化到托盘」，
+    /// 真正的退出收进托盘右键菜单。
+    /// </summary>
+    private void ConfigureTray()
+    {
+        IntPtr hwnd = WindowNative.GetWindowHandle(this);
+
+        _tray = new TrayIcon(hwnd);
+        _tray.Install("AirGrab · 隔空手势抓取投送");
+
+        _tray.ShowRequested += () => _tray?.SetTooltip("AirGrab · 隔空手势抓取投送");
+
+        _tray.QuitRequested += () =>
+        {
+            _allowClose = true;
+            _tray?.Dispose();
+            Close();
+        };
+
+        AppWindow.Closing += (_, args) =>
+        {
+            if (_allowClose) return;
+
+            args.Cancel = true;
+            _tray?.HideToTray();
+            _tray?.SetTooltip("AirGrab · 后台运行中（点击恢复窗口）");
+        };
     }
 
     /// <summary>Mica：让自绘标题栏与内容区共享同一层桌面材质。</summary>

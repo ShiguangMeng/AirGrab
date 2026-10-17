@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -51,6 +52,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -154,6 +156,8 @@ fun RootScreen(viewModel: AppViewModel) {
                     state = state,
                     carried = carried,
                     peers = peers,
+                    channel = channel,
+                    detector = viewModel.detector,
                     onDragStart = { payload ->
                         dragging = payload
                         viewModel.beginDrag(payload)
@@ -201,6 +205,8 @@ private fun SendPage(
     state: GestureState,
     carried: String,
     peers: List<com.shiguangmeng.airgrab.core.Peer>,
+    channel: AppViewModel.Channel,
+    detector: HandPoseDetector,
     onDragStart: (Payload) -> Unit,
     onDrag: (Offset) -> Unit,
     onDragEnd: (Payload) -> Unit,
@@ -213,6 +219,19 @@ private fun SendPage(
             .padding(horizontal = 20.dp)
     ) {
         GesturePanel(state = state, carried = carried, hint = state.hint)
+
+        // 摄像头通道：预览与采集是同一份 CameraX 会话，
+        // 预览出现即代表帧正在喂给推理器。
+        if (channel == AppViewModel.Channel.CAMERA) {
+            Spacer(Modifier.height(14.dp))
+            CameraHandPreview(
+                detector = detector,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(220.dp)
+                    .clip(RoundedCornerShape(22.dp))
+            )
+        }
 
         Spacer(Modifier.height(18.dp))
 

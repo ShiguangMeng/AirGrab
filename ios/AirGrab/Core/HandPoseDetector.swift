@@ -3,6 +3,7 @@ import AVFoundation
 import Vision
 import CoreGraphics
 import Combine
+import UserNotifications
 
 /// 摄像头通道：AVFoundation 采集前置摄像头 + Vision 手部 21 关键点。
 ///
@@ -79,6 +80,8 @@ final class HandPoseDetector: NSObject, ObservableObject {
     private var stableCount = 0
     private var lastPublishedOpenness: CGFloat = 0
 
+    private static let noticeIdentifier = "airgrab.keepalive"
+
     func start() {
         guard Self.isCameraAvailable else {
             statusText = "无可用摄像头 · 已回退模拟输入"
@@ -118,6 +121,8 @@ final class HandPoseDetector: NSObject, ObservableObject {
     private func startKeepAlive() {
         guard keepsRunningInBackground, !keepAliveRunning else { return }
         keepAliveRunning = true
+
+        postBackgroundNotice()
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -159,12 +164,46 @@ final class HandPoseDetector: NSObject, ObservableObject {
         guard keepAliveRunning else { return }
         keepAliveRunning = false
 
+        removeBackgroundNotice()
+
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.keepAliveNode.stop()
             self.keepAliveEngine.stop()
             try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
         }
+    }
+
+    // MARK: - 后台提示
+
+    /// 发出「正在后台识别」的提示。
+    ///
+    /// iOS 的通知不支持真正的常驻（用户可随手清除），这里的作用是让用户知道
+    /// 摄像头仍在工作、可以直接切到其他应用做手势投送。
+    private func postBackgroundNotice() {
+        let center = UNUserNotificationCenter.current()
+
+        center.requestAuthorization(options: [.alert]) { granted, _ in
+            guard granted else { return }
+
+            let content = UNMutableNotificationContent()
+            content.title = "AirGrab 正在识别手势"
+            content.body = "摄像头在后台持续采集，切到其他应用不会中断"
+            content.sound = nil
+
+            let request = UNNotificationRequest(
+                identifier: Self.noticeIdentifier,
+                content: content,
+                trigger: nil   // nil 表示立即投递
+            )
+            center.add(request, withCompletionHandler: nil)
+        }
+    }
+
+    private func removeBackgroundNotice() {
+        let center = UNUserNotificationCenter.current()
+        center.removeDeliveredNotifications(withIdentifiers: [Self.noticeIdentifier])
+        center.removePendingNotificationRequests(withIdentifiers: [Self.noticeIdentifier])
     }
 
     private func configureIfNeeded() {

@@ -263,10 +263,12 @@ public sealed class HandPoseDetector : IDisposable
             HandPose pose = Detect(pixels, width, height);
             PoseReady?.Invoke(pose);
 
-            // 预览：把当前帧交给界面。转换一份独立副本，避免与后续帧争用缓冲。
-            SoftwareBitmap preview = SoftwareBitmap.Convert(
-                bgra, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
-            _dispatcher.TryEnqueue(() => PreviewFrame?.Invoke(preview));
+            // 预览抽帧：每 3 帧送一次即可。1080p 位图每张约 8 MB，
+            // 10 fps 全量上屏会给 UI 线程带来不必要的渲染压力。
+            if (++_previewTick % 3 == 0)
+            {
+                QueuePreview(bgra);
+            }
         }
         catch (Exception ex)
         {
@@ -275,6 +277,88 @@ public sealed class HandPoseDetector : IDisposable
         finally
         {
             if (converted) bgra.Dispose();
+        }
+    }
+
+    /// <summary>待界面上屏的预览帧；只保留最新一张。</summary>
+    private SoftwareBitmap? _pendingPreview;
+    private bool _previewScheduled;
+    private int _previewTick;
+
+    /// <summary>
+    /// 把当前帧排进预览队列。
+    ///
+    /// 两个约束决定了这里不能简单地把原始帧丢给界面：
+    /// 1. 摄像头帧通常是 1080p，每帧约 8 MB，10 fps 下会持续制造大对象，
+    ///    `SoftwareBitmapSource` 在高频大图渲染时容易失败；
+    /// 2. 界面消费速度未必跟得上采集，排队会不断堆积。
+    /// 因此先把帧缩到 480 宽以内，并且只保留最新一帧 —— 迟到的旧帧直接丢弃。
+    /// </summary>
+    private void QueuePreview(SoftwareBitmap source)
+    {
+        SoftwareBitmap? prepared = PreparePreview(source);
+        if (prepared is null) return;
+
+        SoftwareBitmap? discarded = Interlocked.Exchange(ref _pendingPreview, prepared);
+        discarded?.Dispose();
+
+        if (_previewScheduled) return;
+        _previewScheduled = true;
+
+        _dispatcher.TryEnqueue(() =>
+        {
+            _previewScheduled = false;
+
+            SoftwareBitmap? frame = Interlocked.Exchange(ref _pendingPreview, null);
+            if (frame is null) return;
+
+            // 没有订阅者时也要释放，否则每帧泄漏一张位图。
+            if (PreviewFrame is null)
+            {
+                frame.Dispose();
+                return;
+            }
+
+            try
+            {
+                PreviewFrame.Invoke(frame);
+            }
+            catch (Exception ex)
+            {
+                // 预览是辅助信息，渲染失败不应影响手势识别。
+                frame.Dispose();
+                Report($"预览不可用：{ex.Message}");
+            }
+        });
+    }
+
+    /// <summary>
+    /// 统一预览帧的像素格式。
+    ///
+    /// `SoftwareBitmap.Convert` 没有接收 `BitmapTransform` 的重载 —— 缩放只能发生在
+    /// 解码阶段，对已在内存里的位图只能做格式转换。所以这里只做格式归一到 BGRA8，
+    /// 尺寸压力交给调用方的抽帧节流处理。
+    ///
+    /// 源位图在帧引用释放后即失效，因此格式已达标时也要 `Copy` 出独立副本。
+    /// </summary>
+    private static SoftwareBitmap? PreparePreview(SoftwareBitmap source)
+    {
+        try
+        {
+            if (source.BitmapPixelFormat == BitmapPixelFormat.Bgra8 &&
+                source.BitmapAlphaMode == BitmapAlphaMode.Premultiplied)
+            {
+                return SoftwareBitmap.Copy(source);
+            }
+
+            return SoftwareBitmap.Convert(
+                source,
+                BitmapPixelFormat.Bgra8,
+                BitmapAlphaMode.Premultiplied);
+        }
+        catch
+        {
+            return null;
         }
     }
 

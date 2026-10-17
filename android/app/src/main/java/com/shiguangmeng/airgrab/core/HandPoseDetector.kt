@@ -29,6 +29,11 @@ class HandPoseDetector(private val context: Context) {
     private val _status = MutableStateFlow("未启动")
     val status: StateFlow<String> = _status.asStateFlow()
 
+    /** 供界面层回报采集层的问题（例如摄像头绑定失败）。 */
+    fun reportStatus(message: String) {
+        _status.value = message
+    }
+
     private var landmarker: HandLandmarker? = null
 
     val isReady: Boolean get() = landmarker != null
@@ -87,9 +92,6 @@ class HandPoseDetector(private val context: Context) {
         private const val MIDDLE_MCP = 9
         private val TIP_INDICES = intArrayOf(8, 12, 16, 20)
 
-        /** 整手置信度下限。低于此值的观测多为把脸部 / 手臂轮廓误判为手。 */
-        private const val MIN_HAND_SCORE = 0.6f
-
         /** 掌长占画面短边的合理区间；越界视为误检。 */
         private const val MIN_PALM_LENGTH = 0.04
         private const val MAX_PALM_LENGTH = 0.70
@@ -103,6 +105,11 @@ class HandPoseDetector(private val context: Context) {
          *
          * 参考点取**掌根**而非掌心：指尖到掌根的距离在张开与握拳之间差异最大，
          * 用掌心中点做参考会压缩这个差异，导致张开手掌难以越过张开阈值。
+         *
+         * **置信度不作为判据**：MediaPipe 已用 `minHandDetectionConfidence` 过滤过检测，
+         * 而 handedness 分类分数在部分配置下可能为空 —— 拿它当硬门槛会让所有正常结果
+         * 一起被挡掉，表现为「摄像头开着但抓取毫无反应」。这里只把该分数当诊断值上报，
+         * 真正的误检过滤交给下面的**掌长几何校验**。
          */
         fun analyze(result: HandLandmarkerResult): HandPose {
             val hands = result.landmarks()
@@ -111,13 +118,12 @@ class HandPoseDetector(private val context: Context) {
             val primary = hands.first()
             if (primary.size < 21) return HandPose.NONE
 
-            // 分类分数即整手置信度；误检结果通常明显低于门槛。
+            // 仅用于上屏诊断；取不到时给一个乐观值，不参与判断。
             val score = result.handednesses()
                 .getOrNull(0)
                 ?.firstOrNull()
                 ?.score()
                 ?: 0f
-            if (score < MIN_HAND_SCORE) return HandPose.NONE
 
             val wrist = primary[WRIST]
             val middleMcp = primary[MIDDLE_MCP]
@@ -126,6 +132,8 @@ class HandPoseDetector(private val context: Context) {
                 (middleMcp.x() - wrist.x()).toDouble(),
                 (middleMcp.y() - wrist.y()).toDouble()
             )
+
+            // 几何合理性：脸或背景被误判为手时，关键点的尺度或朝向通常明显异常。
             if (palmLength < MIN_PALM_LENGTH || palmLength > MAX_PALM_LENGTH) return HandPose.NONE
 
             var sum = 0.0
@@ -145,7 +153,7 @@ class HandPoseDetector(private val context: Context) {
                 openness = openness,
                 x = palmX.coerceIn(0f, 1f),
                 y = palmY.coerceIn(0f, 1f),
-                confidence = score,
+                confidence = if (score > 0.01f) score else 0.9f,
                 handCount = hands.size
             )
         }

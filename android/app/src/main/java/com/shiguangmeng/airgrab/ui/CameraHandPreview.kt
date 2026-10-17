@@ -1,17 +1,31 @@
 package com.shiguangmeng.airgrab.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.SystemClock
 import android.util.Size
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -39,6 +53,55 @@ fun CameraHandPreview(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+
+    // CameraX 绑定需要 CAMERA 运行时权限。没有权限时 bindToLifecycle 会被系统
+    // 静默拒绝 —— 预览就成了一块黑屏，且不一定抛出可捕获的异常。
+    var cameraGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        cameraGranted = granted
+        if (!granted) {
+            detector.reportStatus("未授予摄像头权限 · 请在系统设置中开启")
+        }
+    }
+
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        // 通知权限只决定前台服务通知是否可见，不影响采集本身。
+    }
+
+    LaunchedEffect(Unit) {
+        if (!cameraGranted) {
+            cameraLauncher.launch(Manifest.permission.CAMERA)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    if (!cameraGranted) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Text(
+                text = "需要摄像头权限才能识别手势",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
+            )
+        }
+        return
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val previewView = remember {
@@ -101,7 +164,10 @@ fun CameraHandPreview(
         }, ContextCompat.getMainExecutor(context))
 
         onDispose {
-            runCatching { providerFuture.get().unbindAll() }
+            // future 可能尚未完成 —— 直接 get() 会阻塞 UI 线程。
+            if (providerFuture.isDone) {
+                runCatching { providerFuture.get().unbindAll() }
+            }
             executor.shutdown()
         }
     }

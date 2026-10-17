@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using Microsoft.UI.Dispatching;
+using WinRT;
 using Windows.Foundation;
 using Windows.Graphics.Imaging;
 using Windows.Media.Capture;
@@ -362,6 +363,14 @@ public sealed class HandPoseDetector : IDisposable
         }
     }
 
+    /// <summary>
+    /// 读取 SoftwareBitmap 的像素。
+    ///
+    /// CsWinRT（.NET 5+ 的 WinRT 投影）**不再支持**把 WinRT 对象直接 cast 成
+    /// `[ComImport]` 接口，那样会抛
+    /// `Invalid cast from 'WinRT.IInspectable' to 'IMemoryBufferByteAccess'`。
+    /// 正确做法是取出底层 IInspectable 指针，自己 QI 到目标接口，再按 vtable 调用。
+    /// </summary>
     private static unsafe byte[] ReadBgra(SoftwareBitmap bitmap, int width, int height)
     {
         byte[] bytes = new byte[width * height * 4];
@@ -369,21 +378,52 @@ public sealed class HandPoseDetector : IDisposable
         using BitmapBuffer buffer = bitmap.LockBuffer(BitmapBufferAccessMode.Read);
         using IMemoryBufferReference reference = buffer.CreateReference();
 
-        ((IMemoryBufferByteAccess)reference).GetBuffer(out byte* source, out uint _);
-
-        int stride = buffer.GetPlaneDescription(0).Stride;
-        int rowBytes = width * 4;
-
-        fixed (byte* destination = bytes)
+        if (reference is not IWinRTObject winrt)
         {
-            for (int y = 0; y < height; y++)
+            throw new InvalidOperationException("无法取得 IMemoryBufferReference 的原生对象");
+        }
+
+        IntPtr inspectable = winrt.NativeObject.ThisPtr;
+        Guid iid = typeof(IMemoryBufferByteAccess).GUID;
+
+        int hr = Marshal.QueryInterface(inspectable, ref iid, out IntPtr byteAccess);
+        if (hr != 0)
+        {
+            throw new InvalidOperationException($"QI IMemoryBufferByteAccess 失败：0x{hr:X8}");
+        }
+
+        try
+        {
+            // IUnknown 占 vtable 前 3 项（QueryInterface / AddRef / Release），
+            // GetBuffer 是第 4 项。
+            var getBuffer =
+                (delegate* unmanaged[Stdcall]<IntPtr, out byte*, out uint, int>)
+                (*(void***)byteAccess)[3];
+
+            int result = getBuffer(byteAccess, out byte* source, out uint capacity);
+            if (result < 0)
             {
-                Buffer.MemoryCopy(
-                    source + (long)y * stride,
-                    destination + (long)y * rowBytes,
-                    rowBytes,
-                    rowBytes);
+                throw new InvalidOperationException($"GetBuffer 失败：0x{result:X8}");
             }
+
+            int stride = buffer.GetPlaneDescription(0).Stride;
+            int rowBytes = width * 4;
+
+            fixed (byte* destination = bytes)
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    Buffer.MemoryCopy(
+                        source + (long)y * stride,
+                        destination + (long)y * rowBytes,
+                        rowBytes,
+                        rowBytes);
+                }
+            }
+        }
+        finally
+        {
+            Marshal.Release(byteAccess);
         }
 
         return bytes;

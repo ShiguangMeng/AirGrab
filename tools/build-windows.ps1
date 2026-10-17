@@ -183,3 +183,7 @@ Write-Host "  time  : $($item.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss'))"
 Write-Host ""
 Write-Host "Self-contained single file -- the target machine needs neither .NET nor Windows App SDK." -ForegroundColor DarkGray
 Write-Host ""
+
+# 显式归零：脚本里还调过 dotnet --list-sdks 等原生命令，
+# $LASTEXITCODE 可能是它们的残留值，导致调用方误判为失败。
+exit 0

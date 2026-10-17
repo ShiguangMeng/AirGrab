@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shiguangmeng.airgrab.core.GestureState
+import com.shiguangmeng.airgrab.core.HandPoseDetector
 import com.shiguangmeng.airgrab.core.Payload
 import kotlin.math.roundToInt
 

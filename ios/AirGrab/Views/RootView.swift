@@ -168,6 +168,25 @@ struct RootView: View {
                 header
 
                 VStack(alignment: .leading, spacing: 12) {
+                    Text("手势主控")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AGTheme.ink)
+
+                    Toggle(isOn: Binding(
+                        get: { model.gestureMaster },
+                        set: { model.setGestureMaster($0) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(model.gestureMaster ? "本机响应抓取并发送" : "本机只接收，不响应抓取")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("同一只手会被所有设备的摄像头同时看到。想从 A 发到 B，请在 A 上开启、在 B 上关闭。")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(AGTheme.inkSecondary)
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
                     Text("手势通道")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(AGTheme.ink)

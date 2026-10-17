@@ -213,6 +213,12 @@ public sealed partial class MainWindow : Window
         SyncUi();
     }
 
+    private void OnGestureMasterToggled(object sender, RoutedEventArgs e)
+    {
+        Model.SetGestureMaster(GestureMasterSwitch.IsOn);
+        SyncUi();
+    }
+
     private void OnClearManualPeersClicked(object sender, RoutedEventArgs e)
     {
         Model.ClearManualPeers();

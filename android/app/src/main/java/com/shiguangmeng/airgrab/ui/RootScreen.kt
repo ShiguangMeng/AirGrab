@@ -81,6 +81,7 @@ fun RootScreen(viewModel: AppViewModel) {
     val status by viewModel.status.collectAsStateWithLifecycle()
     val channel by viewModel.channel.collectAsStateWithLifecycle()
     val toast by viewModel.toast.collectAsStateWithLifecycle()
+    val gestureMaster by viewModel.gestureMaster.collectAsStateWithLifecycle()
 
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var dragging by remember { mutableStateOf<Payload?>(null) }
@@ -181,7 +182,9 @@ fun RootScreen(viewModel: AppViewModel) {
                 else -> SettingsPage(
                     channel = channel,
                     status = status,
-                    onChannel = { viewModel.setChannel(it) }
+                    gestureMaster = gestureMaster,
+                    onChannel = { viewModel.setChannel(it) },
+                    onGestureMaster = { viewModel.setGestureMaster(it) }
                 )
             }
 
@@ -367,7 +370,9 @@ private fun HistoryPage(inbox: List<Payload>, outbox: List<Payload>) {
 private fun SettingsPage(
     channel: AppViewModel.Channel,
     status: String,
-    onChannel: (AppViewModel.Channel) -> Unit
+    gestureMaster: Boolean,
+    onChannel: (AppViewModel.Channel) -> Unit,
+    onGestureMaster: (Boolean) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -375,6 +380,39 @@ private fun SettingsPage(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
     ) {
+        Text("手势主控", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Spacer(Modifier.height(10.dp))
+
+        androidx.compose.material3.Card(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = if (gestureMaster) "本机响应抓取并发送" else "本机只接收，不响应抓取",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = "同一只手会被所有设备的摄像头同时看到。想从 A 发到 B，请在 A 上开启、在 B 上关闭。",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                androidx.compose.material3.Switch(
+                    checked = gestureMaster,
+                    onCheckedChange = onGestureMaster
+                )
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+
         Text("手势通道", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
         Spacer(Modifier.height(10.dp))
 

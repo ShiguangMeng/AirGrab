@@ -55,8 +55,8 @@ public readonly record struct HandPose(double Openness, double X, double Y, floa
 {
     public static HandPose None => new(0, 0.5, 0.5, 0, 0);
 
-    public bool IsFist => Openness <= 0.35;
-    public bool IsOpenPalm => Openness >= 0.62;
+    public bool IsFist => Openness <= 0.38;
+    public bool IsOpenPalm => Openness >= 0.55;
 }
 
 public enum MultiHandPolicy { Reject, UseNearest }

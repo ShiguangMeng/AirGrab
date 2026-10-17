@@ -28,9 +28,37 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.shiguangmeng.airgrab.core.HandPoseDetector
 import java.util.concurrent.Executors
+
+/**
+ * 状态恒为 RESUMED 的 LifecycleOwner。
+ *
+ * CameraX 的 `bindToLifecycle` 会**跟随宿主 lifecycle 自动解绑** —— 应用一进入后台，
+ * Activity 走到 STOPPED，采集立刻停止，前台服务也救不回来。
+ * 这里用一个状态永远是 RESUMED 的伪 lifecycle 做绑定宿主，
+ * 让采集不随界面暂停而中断；真正的停止交给 Composable 的 `onDispose`。
+ *
+ * 这是本地运行专用做法 —— 上架商店的场景不应绕过 lifecycle 约束。
+ */
+private class AlwaysResumedLifecycleOwner : LifecycleOwner {
+    private val registry = LifecycleRegistry(this)
+
+    override val lifecycle: Lifecycle
+        get() = registry
+
+    init {
+        registry.currentState = Lifecycle.State.RESUMED
+    }
+
+    fun destroy() {
+        registry.currentState = Lifecycle.State.DESTROYED
+    }
+}
 
 /**
  * 摄像头采集与预览。
@@ -102,7 +130,8 @@ fun CameraHandPreview(
         return
     }
 
-    val lifecycleOwner = LocalLifecycleOwner.current
+    // 不用宿主 lifecycle：那样一切到后台采集就断了。
+    val captureOwner = remember { AlwaysResumedLifecycleOwner() }
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -113,7 +142,7 @@ fun CameraHandPreview(
         }
     }
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(Unit) {
         val executor = Executors.newSingleThreadExecutor()
         val providerFuture = ProcessCameraProvider.getInstance(context)
 
@@ -153,7 +182,7 @@ fun CameraHandPreview(
             try {
                 provider.unbindAll()
                 provider.bindToLifecycle(
-                    lifecycleOwner,
+                    captureOwner,
                     CameraSelector.DEFAULT_FRONT_CAMERA,
                     preview,
                     analysis
@@ -168,6 +197,7 @@ fun CameraHandPreview(
             if (providerFuture.isDone) {
                 runCatching { providerFuture.get().unbindAll() }
             }
+            captureOwner.destroy()
             executor.shutdown()
         }
     }

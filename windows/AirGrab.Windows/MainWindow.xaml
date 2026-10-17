@@ -396,6 +396,24 @@
                             <Button x:Name="ChannelCamButton" Content="摄像头识别" Click="OnChannelCamClicked" />
                         </StackPanel>
 
+                        <TextBlock Text="手势主控" FontSize="13" FontWeight="SemiBold" />
+                        <Border
+                            CornerRadius="9" Padding="14,12"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1">
+                            <StackPanel Spacing="8">
+                                <ToggleSwitch x:Name="GestureMasterSwitch"
+                                              IsOn="True"
+                                              OnContent="开启 · 本机响应抓取并发送"
+                                              OffContent="关闭 · 本机只接收，不响应抓取"
+                                              Toggled="OnGestureMasterToggled" />
+                                <TextBlock
+                                    Text="同一只手会被所有设备的摄像头同时看到。多台设备同时开着主控时，每一台都会判定抓取 —— 想从 A 发到 B，请在 A 上保持主控开启、在 B 上关闭。"
+                                    FontSize="11.5" Opacity="0.7" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
                         <!-- 摄像头预览与推理诊断：仅在摄像头通道展开 -->
                         <Border x:Name="CameraPanel" Visibility="Collapsed"
                                 CornerRadius="9" Padding="14,12"

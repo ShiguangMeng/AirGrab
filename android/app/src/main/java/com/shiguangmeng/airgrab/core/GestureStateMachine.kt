@@ -29,8 +29,8 @@ data class HandPose(
     val confidence: Float = 0f,
     val handCount: Int = 0
 ) {
-    val isFist: Boolean get() = openness <= 0.35f
-    val isOpenPalm: Boolean get() = openness >= 0.62f
+    val isFist: Boolean get() = openness <= 0.38f
+    val isOpenPalm: Boolean get() = openness >= 0.55f
 
     companion object {
         val NONE = HandPose()

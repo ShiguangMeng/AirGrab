@@ -32,6 +32,38 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
     public string CameraStatus { get; private set; } = "摄像头通道未启动";
     public string CameraDiagnostics { get; private set; } = "—";
 
+    /// <summary>
+    /// 手势主控。
+    ///
+    /// 同一只手会被所有设备的摄像头同时看到，若每台设备都独立判定抓取，
+    /// 就会出现「想从 A 发到 B，结果 B 也判定抓取并抢走这次操作」。
+    /// 原版硬件方案靠 UWB 测距判断手离哪台设备更近，四端都没有这个能力，
+    /// 因此改为显式指定：只有主控设备响应抓取，其余设备只作为接收方。
+    /// </summary>
+    public bool GestureMasterEnabled { get; private set; } = true;
+
+    public void SetGestureMaster(bool enabled)
+    {
+        if (GestureMasterEnabled == enabled) return;
+
+        GestureMasterEnabled = enabled;
+
+        if (!enabled)
+        {
+            // 关掉主控就立刻放掉正在进行的抓取，避免半途卡在搬运态。
+            Gesture.Cancel();
+            Gesture.Finish();
+        }
+
+        StatusLine = enabled
+            ? "手势主控已开启 · 本机可抓取并发送"
+            : "手势主控已关闭 · 本机只接收，不响应抓取";
+
+        Raise(nameof(GestureMasterEnabled));
+        Raise(nameof(StatusLine));
+        RaiseState();
+    }
+
     public AppModel(DispatcherQueue dispatcher)
     {
         _dispatcher = dispatcher;
@@ -250,6 +282,8 @@ public sealed class AppModel : INotifyPropertyChanged, IDisposable
         Detector.PoseReady += pose =>
         {
             if (Channel != GestureChannel.Camera) return;
+            // 非主控设备完全不响应抓取 —— 否则同一只手会让所有设备同时抓取。
+            if (!GestureMasterEnabled) return;
             Gesture.Ingest(pose, DateTimeOffset.UtcNow);
         };
 

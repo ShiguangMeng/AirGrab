@@ -54,8 +54,8 @@ struct HandPose: Equatable {
 
     static let none = HandPose(openness: 0, center: .init(x: 0.5, y: 0.5), confidence: 0, handCount: 0)
 
-    var isFist: Bool { openness <= 0.35 }
-    var isOpenPalm: Bool { openness >= 0.62 }
+    var isFist: Bool { openness <= 0.38 }
+    var isOpenPalm: Bool { openness >= 0.55 }
 }
 
 /// 手势状态机：把连续的手部姿态流收敛成离散的抓取 / 投送事件。

@@ -25,6 +25,21 @@ final class AppModel: ObservableObject {
     @Published var toast: String?
     @Published var toastDetail: String?
 
+    /// 手势主控。
+    ///
+    /// 同一只手会被所有设备的摄像头同时看到，若每台设备都独立判定抓取，
+    /// 就会出现「想从 A 发到 B，结果 B 也判定抓取并截屏」。
+    /// 华为原版靠 UWB 测距判断手离哪台设备更近，四端都没有这个硬件，
+    /// 因此改为显式指定：只有主控设备响应抓取，其余设备只做接收方。
+    @Published private(set) var gestureMaster: Bool = true
+
+    func setGestureMaster(_ enabled: Bool) {
+        gestureMaster = enabled
+        statusLine = enabled
+            ? "手势主控已开启 · 本机可抓取并发送"
+            : "手势主控已关闭 · 本机只接收，不响应抓取"
+    }
+
     let discovery = PeerDiscovery()
     let transfer = FileTransfer()
     let detector = HandPoseDetector()
@@ -72,9 +87,45 @@ final class AppModel: ObservableObject {
 
     // MARK: - 抓取本机屏幕
 
-    /// 抓取本机当前屏幕内容，加入待投送列表。
-    /// 移动端的抓取源就是屏幕本身 —— 与 Windows 端的剪贴板抓取相对应，
-    /// 两端都不需要文件选择器或额外授权。
+    /// 手势抓取的待投送内容：握拳确认那一刻截下的屏幕。
+    private var pendingGesturePayload: Payload?
+
+    /// 握拳确认后立即截取当前屏幕。
+    ///
+    /// 手势通道不要求用户事先挑内容 —— 抓起来的就是「此刻的屏幕」，
+    /// 这样从握拳到投送之间只有一个动作（张开手掌）。
+    func captureScreenForGesture() {
+        guard let image = ScreenCapture.snapshot(), let data = image.pngData() else {
+            statusLine = "截屏失败，本次抓取为空"
+            showToast("截屏失败", detail: "请确认应用在前台且窗口可见")
+            return
+        }
+
+        let payload = Payload.image(name: "屏幕截图-\(Self.timestampText()).png", data: data)
+        pendingGesturePayload = payload
+        outbox.insert(payload, at: 0)
+
+        statusLine = "已抓取本机屏幕 \(payload.sizeText)，张开手掌投送"
+        showToast("已抓取本机屏幕", detail: "\(payload.sizeText) · 张开手掌即可投送")
+    }
+
+    /// 张开手掌时把刚抓到的屏幕投给目标设备。
+    ///
+    /// 目标固定取设备列表首位 —— 局域网内通常只有一台对端，
+    /// 多设备时把「最近发现/上次投送」排到首位即可，不必让用户二次选择。
+    private func sendPendingGesturePayload() {
+        guard let payload = pendingGesturePayload else { return }
+        pendingGesturePayload = nil
+
+        guard let peer = peers.first else {
+            showToast("没有可接收的设备", detail: "内容已保留在待投送列表")
+            return
+        }
+
+        send(payload, to: peer)
+    }
+
+    /// 抓取本机当前屏幕内容，加入待投送列表（手动入口，与手势通道共用抓取实现）。
     func captureScreen() {
         guard let image = ScreenCapture.snapshot(), let data = image.pngData() else {
             showToast("截屏失败", detail: "请确认应用在前台且窗口可见")
@@ -160,10 +211,24 @@ final class AppModel: ObservableObject {
         }
 
         machine.onGrabConfirmed = { [weak self] _ in
-            Task { @MainActor in self?.statusLine = "抓取已确认，移向目标设备" }
+            Task { @MainActor in
+                guard let self else { return }
+
+                guard self.gestureMaster else {
+                    self.statusLine = "本机不是手势主控 · 忽略本次抓取"
+                    return
+                }
+
+                self.statusLine = "抓取已确认，正在截取当前屏幕"
+                self.captureScreenForGesture()
+            }
         }
         machine.onDropConfirmed = { [weak self] _ in
-            Task { @MainActor in self?.statusLine = "松开手掌，投递中…" }
+            Task { @MainActor in
+                guard let self else { return }
+                self.statusLine = "松开手掌，投递中…"
+                self.sendPendingGesturePayload()
+            }
         }
         machine.onCancelled = { [weak self] in
             Task { @MainActor in self?.statusLine = "本次抓取已取消" }

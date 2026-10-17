@@ -8,6 +8,8 @@ using Windows.Graphics.Imaging;
 using Windows.Media.Capture;
 using Windows.Media.Capture.Frames;
 using Windows.Media.MediaProperties;
+using Windows.Security.Cryptography;
+using Windows.Storage.Streams;
 
 namespace AirGrab.Core;
 
@@ -75,11 +77,19 @@ public sealed class HandPoseDetector : IDisposable
     private const int AnchorCount = 2016;
 
     // ---- 质量闸门 ----
-    private const float PalmScoreThreshold = 0.75f;
-    private const float HandScoreThreshold = 0.6f;
+    // 阈值取参考实现的偏松一侧：palm_detection 的 0.75 是给静态图调的，
+    // 视频流连续帧下模型分数普遍偏低，卡太严会表现为"手在画面里但始终检测不到"。
+    private const float PalmScoreThreshold = 0.55f;
+    private const float HandScoreThreshold = 0.30f;
     private const float NmsThreshold = 0.3f;
     private const int StableFramesRequired = 3;
     private const int InferIntervalMs = 100;
+
+    /// <summary>预览抽帧间隔：每 N 次推理送一帧上屏。</summary>
+    private const int PreviewEveryNthFrame = 6;
+
+    /// <summary>预览图的最大宽度。原始帧是 1080p，直接上屏会拖死 UI 线程。</summary>
+    private const int PreviewMaxWidth = 320;
 
     // ---- 张开度标定（与 iOS / Android 同值）----
     private const float OpennessFist = 1.05f;
@@ -142,8 +152,17 @@ public sealed class HandPoseDetector : IDisposable
 
         try
         {
-            _palm ??= new InferenceSession(ReadModelResource("palm_detection_mediapipe_2023feb.onnx"));
-            _hand ??= new InferenceSession(ReadModelResource("handpose_estimation_mediapipe_2023feb.onnx"));
+            // 线程数限死：ONNX Runtime 默认会吃满所有核心，
+            // 与 UI 线程抢 CPU 是「程序持续运行越来越卡」的直接原因。
+            var options = new SessionOptions
+            {
+                IntraOpNumThreads = 2,
+                InterOpNumThreads = 1,
+                GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
+            };
+
+            _palm ??= new InferenceSession(ReadModelResource("palm_detection_mediapipe_2023feb.onnx"), options);
+            _hand ??= new InferenceSession(ReadModelResource("handpose_estimation_mediapipe_2023feb.onnx"), options);
             return true;
         }
         catch (Exception ex)
@@ -264,11 +283,11 @@ public sealed class HandPoseDetector : IDisposable
             HandPose pose = Detect(pixels, width, height);
             PoseReady?.Invoke(pose);
 
-            // 预览抽帧：每 3 帧送一次即可。1080p 位图每张约 8 MB，
-            // 10 fps 全量上屏会给 UI 线程带来不必要的渲染压力。
-            if (++_previewTick % 3 == 0)
+            // 预览抽帧：每 N 帧送一帧，并且先缩到 320 宽再上屏。
+            // 1080p 位图每张约 8 MB，原样丢给 UI 线程是界面卡顿的主因。
+            if (++_previewTick % PreviewEveryNthFrame == 0)
             {
-                QueuePreview(bgra);
+                QueuePreview(pixels, width, height);
             }
         }
         catch (Exception ex)
@@ -295,9 +314,9 @@ public sealed class HandPoseDetector : IDisposable
     /// 2. 界面消费速度未必跟得上采集，排队会不断堆积。
     /// 因此先把帧缩到 480 宽以内，并且只保留最新一帧 —— 迟到的旧帧直接丢弃。
     /// </summary>
-    private void QueuePreview(SoftwareBitmap source)
+    private void QueuePreview(byte[] pixels, int width, int height)
     {
-        SoftwareBitmap? prepared = PreparePreview(source);
+        SoftwareBitmap? prepared = PreparePreview(pixels, width, height);
         if (prepared is null) return;
 
         SoftwareBitmap? discarded = Interlocked.Exchange(ref _pendingPreview, prepared);
@@ -334,27 +353,48 @@ public sealed class HandPoseDetector : IDisposable
     }
 
     /// <summary>
-    /// 统一预览帧的像素格式。
+    /// 把 BGRA 帧缩放到预览尺寸并转成 SoftwareBitmap。
     ///
-    /// `SoftwareBitmap.Convert` 没有接收 `BitmapTransform` 的重载 —— 缩放只能发生在
-    /// 解码阶段，对已在内存里的位图只能做格式转换。所以这里只做格式归一到 BGRA8，
-    /// 尺寸压力交给调用方的抽帧节流处理。
-    ///
-    /// 源位图在帧引用释放后即失效，因此格式已达标时也要 `Copy` 出独立副本。
+    /// 缩放必须自己做：`SoftwareBitmap.Convert` 没有接收 `BitmapTransform` 的重载，
+    /// 那只在解码阶段可用。预览只用于"确认摄像头在工作"，最近邻采样足够，
+    /// 不必为此引入双线性的额外开销。
     /// </summary>
-    private static SoftwareBitmap? PreparePreview(SoftwareBitmap source)
+    private static SoftwareBitmap? PreparePreview(byte[] pixels, int width, int height)
     {
         try
         {
-            if (source.BitmapPixelFormat == BitmapPixelFormat.Bgra8 &&
-                source.BitmapAlphaMode == BitmapAlphaMode.Premultiplied)
+            double scale = Math.Min(1.0, (double)PreviewMaxWidth / width);
+            int outWidth = Math.Max(1, (int)(width * scale));
+            int outHeight = Math.Max(1, (int)(height * scale));
+
+            byte[] resized = new byte[outWidth * outHeight * 4];
+
+            for (int y = 0; y < outHeight; y++)
             {
-                return SoftwareBitmap.Copy(source);
+                int sourceY = Math.Min((int)(y / scale), height - 1);
+                int sourceRow = sourceY * width;
+
+                for (int x = 0; x < outWidth; x++)
+                {
+                    int sourceX = Math.Min((int)(x / scale), width - 1);
+
+                    int sourceIndex = (sourceRow + sourceX) * 4;
+                    int targetIndex = (y * outWidth + x) * 4;
+
+                    resized[targetIndex] = pixels[sourceIndex];
+                    resized[targetIndex + 1] = pixels[sourceIndex + 1];
+                    resized[targetIndex + 2] = pixels[sourceIndex + 2];
+                    resized[targetIndex + 3] = pixels[sourceIndex + 3];
+                }
             }
 
-            return SoftwareBitmap.Convert(
-                source,
+            IBuffer buffer = CryptographicBuffer.CreateFromByteArray(resized);
+
+            return SoftwareBitmap.CreateCopyFromBuffer(
+                buffer,
                 BitmapPixelFormat.Bgra8,
+                outWidth,
+                outHeight,
                 BitmapAlphaMode.Premultiplied);
         }
         catch
@@ -413,7 +453,9 @@ public sealed class HandPoseDetector : IDisposable
             {
                 for (int y = 0; y < height; y++)
                 {
-                    Buffer.MemoryCopy(
+                    // 显式限定：文件里同时引了 Windows.Storage.Streams（其中有 Buffer 类），
+                    // 不限定会和 System.Buffer 撞名。
+                    System.Buffer.MemoryCopy(
                         source + (long)y * stride,
                         destination + (long)y * rowBytes,
                         rowBytes,
@@ -440,6 +482,7 @@ public sealed class HandPoseDetector : IDisposable
         if (boxes.Count == 0)
         {
             ResetStability();
+            ReportDiagnostics("未检测到手掌 · palm_detection 无有效框（把手放进画面并靠近一些）");
             return HandPose.None;
         }
 
@@ -451,6 +494,7 @@ public sealed class HandPoseDetector : IDisposable
         if (score < HandScoreThreshold || landmarks.Length < 21 * 2)
         {
             ResetStability();
+            ReportDiagnostics($"手掌已定位但关键点置信度不足 · {score:0.00} < {HandScoreThreshold:0.00}");
             return HandPose.None;
         }
 
@@ -743,8 +787,8 @@ public sealed class HandPoseDetector : IDisposable
 
     private static PoseCategory CategoryOf(float openness)
     {
-        if (openness <= 0.35f) return PoseCategory.Fist;
-        if (openness >= 0.62f) return PoseCategory.Open;
+        if (openness <= 0.38f) return PoseCategory.Fist;
+        if (openness >= 0.55f) return PoseCategory.Open;
         return PoseCategory.Neutral;
     }
 

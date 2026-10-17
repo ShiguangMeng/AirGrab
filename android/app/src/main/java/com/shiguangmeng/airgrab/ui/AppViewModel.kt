@@ -11,6 +11,7 @@ import com.shiguangmeng.airgrab.core.Payload
 import com.shiguangmeng.airgrab.core.PayloadKind
 import com.shiguangmeng.airgrab.core.Peer
 import com.shiguangmeng.airgrab.core.PeerDiscovery
+import com.shiguangmeng.airgrab.core.ScreenCaptureManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +57,72 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _toast = MutableStateFlow<String?>(null)
     val toast: StateFlow<String?> = _toast.asStateFlow()
 
+    /**
+     * 手势主控。
+     *
+     * 同一只手会被所有设备的摄像头同时看到，若每台设备都独立判定抓取，
+     * 就会出现「想从 A 发到 B，结果 B 也判定抓取并截屏」。
+     * 华为原版靠 UWB 测距判断手离哪台设备更近，四端都没有这个硬件，
+     * 因此改为显式指定：只有主控设备响应抓取，其余设备只做接收方。
+     */
+    private val _gestureMaster = MutableStateFlow(true)
+    val gestureMaster: StateFlow<Boolean> = _gestureMaster.asStateFlow()
+
+    fun setGestureMaster(enabled: Boolean) {
+        _gestureMaster.value = enabled
+        _status.value = if (enabled) {
+            "手势主控已开启 · 本机可抓取并发送"
+        } else {
+            "手势主控已关闭 · 本机只接收，不响应抓取"
+        }
+    }
+
+    /** 握拳确认瞬间截下的屏幕，等待张开手掌投送。 */
+    private var pendingGesturePayload: Payload? = null
+
+    /**
+     * 握拳确认后立即截取当前屏幕。
+     *
+     * 手势通道不要求事先挑内容 —— 抓起来的就是「此刻的屏幕」，
+     * 从握拳到投送之间只剩一个动作（张开手掌）。
+     */
+    private fun captureScreenForGesture() {
+        val bitmap = ScreenCaptureManager.capture()
+
+        if (bitmap == null) {
+            _status.value = "截屏失败 · 请确认已授予屏幕录制权限"
+            return
+        }
+
+        val stream = java.io.ByteArrayOutputStream()
+        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)
+        bitmap.recycle()
+
+        val payload = Payload(
+            kind = PayloadKind.IMAGE,
+            name = "屏幕截图-${System.currentTimeMillis() % 100_000}.png",
+            body = stream.toByteArray()
+        )
+
+        pendingGesturePayload = payload
+        _outbox.value = listOf(payload) + _outbox.value
+
+        _status.value = "已抓取本机屏幕 ${payload.sizeText} · 张开手掌投送"
+    }
+
+    private fun sendPendingGesturePayload() {
+        val payload = pendingGesturePayload ?: return
+        pendingGesturePayload = null
+
+        val target = _peers.value.firstOrNull()
+        if (target == null) {
+            _status.value = "没有可接收的设备 · 内容已保留在待投送列表"
+            return
+        }
+
+        viewModelScope.launch { transfer.send(payload, target) }
+    }
+
     var dragging: Payload? = null
         private set
 
@@ -76,8 +143,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         machine.onStateChanged = { _state.value = it }
-        machine.onGrabConfirmed = { _status.value = "抓取已确认，移向目标设备" }
-        machine.onDropConfirmed = { _status.value = "松开手掌，投递中…" }
+        machine.onGrabConfirmed = {
+            if (!_gestureMaster.value) {
+                _status.value = "本机不是手势主控 · 忽略本次抓取"
+            } else {
+                captureScreenForGesture()
+            }
+        }
+        machine.onDropConfirmed = {
+            _status.value = "松开手掌，投递中…"
+            sendPendingGesturePayload()
+        }
         machine.onCancelled = { _status.value = "本次抓取已取消" }
 
         transfer.onPayloadReceived = { payload ->

@@ -213,6 +213,10 @@ final class HandPoseDetector: NSObject, ObservableObject {
         session.beginConfiguration()
         session.sessionPreset = .vga640x480
 
+        // 不让采集会话接管全局音频会话 —— 否则它会覆盖后台保活用的 playback 配置，
+        // 进程一旦被判定为「没有音频在播」，系统就会挂起采集。
+        session.automaticallyConfiguresApplicationAudioSession = false
+
         if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
            let input = try? AVCaptureDeviceInput(device: device),
            session.canAddInput(input) {
@@ -377,8 +381,8 @@ extension HandPoseDetector: AVCaptureVideoDataOutputSampleBufferDelegate {
     }
 
     private static func category(of openness: CGFloat) -> PoseCategory {
-        if openness <= 0.35 { return .fist }
-        if openness >= 0.62 { return .open }
+        if openness <= 0.38 { return .fist }
+        if openness >= 0.55 { return .open }
         return .neutral
     }
 
